@@ -1,12 +1,12 @@
-name: CI
+name: Pull Request
 
 on:
   pull_request:
     branches:
       - main
-  push:
-    branches:
-      - main
+
+permissions:
+  contents: read
 
 jobs:
   # ── Go: lint, vet, build, unit tests ────────────────────────────────────────
@@ -47,7 +47,7 @@ jobs:
           push: false
           tags: gatus-ingress-controller:ci-test
 
-  # ── Integration tests on k3s ─────────────────────────────────────────────────
+  # ── E2E tests on k3s ─────────────────────────────────────────────────────────
   e2e:
     name: E2E tests (k3s)
     runs-on: ubuntu-latest
@@ -67,7 +67,7 @@ jobs:
 
       - name: Install k3s
         run: |
-          curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable=traefik" sh -
+          curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="v1.32.1+k3s1" INSTALL_K3S_EXEC="--disable=traefik" sh -
           mkdir -p ~/.kube
           sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
           sudo chown "$(whoami)" ~/.kube/config

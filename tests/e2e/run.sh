@@ -32,11 +32,17 @@ helm install "${RELEASE_NAME}" ./charts/gatus-ingress-controller \
   --set targetNamespace="${TARGET_NAMESPACE}" \
   --set ingressClass="${INGRESS_CLASS}"
 
-# ── 3. Wait for controller to be ready ────────────────────────────────────────
+# ── 3. Wait for CRDs to be Established ───────────────────────────────────────
+echo "==> Waiting for CRDs to be Established..."
+kubectl wait --for=condition=Established --timeout="${TIMEOUT}" crd/gatusalerts.monitoring.gatus.io
+kubectl wait --for=condition=Established --timeout="${TIMEOUT}" crd/gatusendpoints.monitoring.gatus.io
+kubectl wait --for=condition=Established --timeout="${TIMEOUT}" crd/gatusexternalendpoints.monitoring.gatus.io
+
+# ── 4. Wait for controller to be ready ────────────────────────────────────────
 echo "==> Waiting for controller to be ready..."
 kubectl rollout status deployment/"${RELEASE_NAME}" -n "${NAMESPACE}" --timeout="${TIMEOUT}"
 
-# ── 4. Create test Ingress ─────────────────────────────────────────────────────
+# ── 5. Create test Ingress ─────────────────────────────────────────────────────
 echo "==> Creating test Ingress..."
 kubectl apply -f - <<EOF
 apiVersion: networking.k8s.io/v1
@@ -50,7 +56,7 @@ spec:
     - host: test-app.example.com
 EOF
 
-# ── 5. Wait for GatusEndpoint to be created ────────────────────────────────────
+# ── 6. Wait for GatusEndpoint to be created ────────────────────────────────────
 echo "==> Waiting for GatusEndpoint to be created..."
 ENDPOINT_NAME="test-app-test-app-example-com"
 for i in $(seq 1 30); do
@@ -66,7 +72,7 @@ for i in $(seq 1 30); do
   sleep 1
 done
 
-# ── 6. Assert GatusEndpoint content ───────────────────────────────────────────
+# ── 7. Assert GatusEndpoint content ───────────────────────────────────────────
 echo "==> Asserting GatusEndpoint content..."
 ACTUAL_URL=$(kubectl get gatusendpoint "${ENDPOINT_NAME}" -n default -o jsonpath='{.spec.url}')
 EXPECTED_URL="https://test-app.example.com"
@@ -85,7 +91,7 @@ if [ "${ACTUAL_GROUP}" != "${EXPECTED_GROUP}" ]; then
 fi
 echo "    Group OK: ${ACTUAL_GROUP}"
 
-# ── 7. Assert ConfigMap is written ────────────────────────────────────────────
+# ── 8. Assert ConfigMap is written ────────────────────────────────────────────
 echo "==> Waiting for ConfigMap '${TARGET_NAMESPACE}/gatus-config' to be created..."
 for i in $(seq 1 30); do
   if kubectl get configmap gatus-config -n "${TARGET_NAMESPACE}" &>/dev/null; then
