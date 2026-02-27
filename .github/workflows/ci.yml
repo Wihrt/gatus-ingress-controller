@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+jobs:
+  # ── Go: lint, vet, build, unit tests ────────────────────────────────────────
+  go:
+    name: Go tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go build
+        run: go build ./...
+
+      - name: go test
+        run: go test ./... -v
+
+  # ── Docker: build validation (no push) ───────────────────────────────────────
+  docker:
+    name: Docker build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: gatus-ingress-controller:ci-test
+
+  # ── Integration tests on k3s ─────────────────────────────────────────────────
+  e2e:
+    name: E2E tests (k3s)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Docker image for e2e
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: gatus-ingress-controller:ci-test
+          load: true
+
+      - name: Install k3s
+        run: |
+          curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable=traefik" sh -
+          mkdir -p ~/.kube
+          sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
+          sudo chown "$(whoami)" ~/.kube/config
+          kubectl wait --for=condition=ready nodes --all --timeout=60s
+
+      - name: Import image into k3s
+        run: |
+          docker save gatus-ingress-controller:ci-test | sudo k3s ctr images import -
+
+      - name: Run e2e tests
+        run: bash tests/e2e/run.sh ci-test
