@@ -6,7 +6,12 @@ on:
       - main
 
 permissions:
-  contents: read
+  contents: write
+  packages: write
+  pull-requests: write
+
+env:
+  REGISTRY: ghcr.io
 
 jobs:
   # ── Go: lint, vet, build, unit tests ────────────────────────────────────────
@@ -31,3 +36,45 @@ jobs:
 
       - name: go test
         run: go test ./... -v
+
+  # ── Docker: build and push with short SHA tag ────────────────────────────────
+  docker:
+    name: Build and push Docker image
+    runs-on: ubuntu-latest
+    needs: go
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set image name (lowercased)
+        run: echo "IMAGE_NAME=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
+      - name: Log in to Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get short SHA
+        id: sha
+        run: echo "short=$(echo '${{ github.sha }}' | cut -c1-7)" >> $GITHUB_OUTPUT
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ steps.sha.outputs.short }}
+
+  # ── Release Please: update changelog and create release PR ───────────────────
+  release-please:
+    name: Release Please
+    runs-on: ubuntu-latest
+    needs: go
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
