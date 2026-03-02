@@ -8,10 +8,9 @@ on:
         required: true
         type: string
 
-# permissions:
-#   contents: write
-#   packages: write
-#   id-token: write
+permissions:
+  contents: write
+  packages: write
 
 env:
   REGISTRY: ghcr.io
@@ -85,7 +84,7 @@ jobs:
           sed -i "s/^appVersion: .*/appVersion: \"${VERSION}\"/" charts/${{ env.CHART_NAME }}/Chart.yaml
 
       - name: Log in to Container registry
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ${{ env.REGISTRY }} --username ${{ github.actor }} --password-stdin
+        run: echo "${{ secrets.HELM_REGISTRY_TOKEN }}" | helm registry login ${{ env.REGISTRY }} --username ${{ github.actor }} --password-stdin
 
       - name: Package and push Helm chart
         run: |
