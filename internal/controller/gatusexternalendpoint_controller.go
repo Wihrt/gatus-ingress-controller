@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -20,8 +19,8 @@ const externalEndpointsKey = "external-endpoints.yaml"
 // aggregates them into the gatus-config ConfigMap under the external-endpoints.yaml key.
 type GatusExternalEndpointReconciler struct {
 	client.Client
-	Scheme          *runtime.Scheme
 	TargetNamespace string
+	ConfigMapName   string
 }
 
 // --- Internal YAML representation for external endpoints ---
@@ -85,14 +84,7 @@ func (r *GatusExternalEndpointReconciler) Reconcile(ctx context.Context, req ctr
 		return ctrl.Result{}, fmt.Errorf("failed to marshal Gatus external endpoints config: %w", err)
 	}
 
-	// Reuse the shared upsertConfigMapKey helper via the embedded GatusEndpointReconciler helper.
-	// We replicate the logic here to avoid circular dependency between reconcilers.
-	epR := &GatusEndpointReconciler{
-		Client:          r.Client,
-		Scheme:          r.Scheme,
-		TargetNamespace: r.TargetNamespace,
-	}
-	return epR.upsertConfigMapKey(ctx, externalEndpointsKey, string(data))
+	return upsertConfigMapKey(ctx, r.Client, r.TargetNamespace, r.ConfigMapName, externalEndpointsKey, string(data))
 }
 
 // resolveExtAlerts resolves GatusAlertRefs to YAML alert configs for external endpoints.

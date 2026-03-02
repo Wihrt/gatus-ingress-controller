@@ -23,6 +23,12 @@ ingressClass: traefik
 # Namespace where the Gatus ConfigMap will be written
 targetNamespace: gatus
 
+# Name of the ConfigMap that the controller will append endpoints to.
+# This ConfigMap must already exist and contain a config.yaml key with the
+# main Gatus configuration (storage, alerting providers, web, etc.).
+# Set this to match the ConfigMap name used by your Gatus Helm release.
+configMapName: gatus-config
+
 # Gateway API (HTTPRoute) support.
 # Set enabled: true only when the Gateway API CRDs are installed in the cluster.
 gatewayApi:

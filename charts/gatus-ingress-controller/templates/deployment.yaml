@@ -24,6 +24,8 @@ spec:
               value: {{ .Values.ingressClass | quote }}
             - name: TARGET_NAMESPACE
               value: {{ .Values.targetNamespace | quote }}
+            - name: CONFIG_MAP_NAME
+              value: {{ .Values.configMapName | quote }}
             - name: GATEWAY_API_ENABLED
               value: {{ .Values.gatewayApi.enabled | quote }}
             - name: GATEWAY_NAMES

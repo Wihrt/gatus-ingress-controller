@@ -30,7 +30,19 @@ jobs:
         run: go build ./...
 
       - name: go test
-        run: go test ./... -v
+        run: go test ./... -v -coverprofile=coverage.out -covermode=atomic
+
+    - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+
+
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage.out
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   # ── Docker: build validation (no push) ───────────────────────────────────────
   docker:

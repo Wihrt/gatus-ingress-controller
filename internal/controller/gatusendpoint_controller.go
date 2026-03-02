@@ -4,9 +4,6 @@ import (
 "context"
 "fmt"
 
-corev1 "k8s.io/api/core/v1"
-"k8s.io/apimachinery/pkg/api/errors"
-metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 "k8s.io/apimachinery/pkg/runtime"
 "k8s.io/apimachinery/pkg/types"
 ctrl "sigs.k8s.io/controller-runtime"
@@ -18,8 +15,7 @@ monitoringv1alpha1 "github.com/Wihrt/gatus-ingress-controller/api/v1alpha1"
 )
 
 const (
-configMapName    = "gatus-config"
-endpointsKey     = "endpoints.yaml"
+	endpointsKey = "endpoints.yaml"
 )
 
 // GatusEndpointReconciler reconciles GatusEndpoint resources and aggregates them
@@ -28,6 +24,7 @@ type GatusEndpointReconciler struct {
 client.Client
 Scheme          *runtime.Scheme
 TargetNamespace string
+ConfigMapName   string
 }
 
 // --- Internal YAML representation types (matching Gatus config format) ---
@@ -129,8 +126,36 @@ if err := r.List(ctx, endpointList); err != nil {
 return ctrl.Result{}, fmt.Errorf("failed to list GatusEndpoints: %w", err)
 }
 
-var endpoints []gatusEndpointYAML
+// Deduplicate by spec.name: user-managed CRs (no managedByLabel) win over auto-generated ones.
+// Pass 1: insert auto-generated CRs.
+type indexedEP struct {
+ep      monitoringv1alpha1.GatusEndpoint
+managed bool
+}
+byName := make(map[string]indexedEP, len(endpointList.Items))
 for _, ep := range endpointList.Items {
+managed := len(ep.OwnerReferences) > 0
+if managed {
+byName[ep.Spec.Name] = indexedEP{ep: ep, managed: true}
+}
+}
+// Pass 2: user-managed CRs overwrite auto-generated ones with the same spec.name.
+for _, ep := range endpointList.Items {
+managed := len(ep.OwnerReferences) > 0
+if !managed {
+if existing, conflict := byName[ep.Spec.Name]; conflict && existing.managed {
+logger.Info("User-managed GatusEndpoint overrides auto-generated one",
+"spec.name", ep.Spec.Name,
+"user-cr", ep.Namespace+"/"+ep.Name,
+"auto-cr", existing.ep.Namespace+"/"+existing.ep.Name)
+}
+byName[ep.Spec.Name] = indexedEP{ep: ep, managed: false}
+}
+}
+
+var endpoints []gatusEndpointYAML
+for _, item := range byName {
+ep := item.ep
 alertYAMLs, err := r.resolveAlerts(ctx, ep.Spec.Alerts, ep.Namespace)
 if err != nil {
 logger.Error(err, "Failed to resolve alerts for endpoint", "name", ep.Name)
@@ -200,7 +225,7 @@ if err != nil {
 return ctrl.Result{}, fmt.Errorf("failed to marshal Gatus endpoints config: %w", err)
 }
 
-return r.upsertConfigMapKey(ctx, endpointsKey, string(data))
+return upsertConfigMapKey(ctx, r.Client, r.TargetNamespace, r.ConfigMapName, endpointsKey, string(data))
 }
 
 // resolveAlerts looks up each GatusAlertRef and merges its overrides with the referenced GatusAlert.
@@ -278,40 +303,6 @@ Renegotiation:   c.TLS.Renegotiation,
 }
 }
 return y
-}
-
-// upsertConfigMapKey creates or updates a single key in the target ConfigMap.
-func (r *GatusEndpointReconciler) upsertConfigMapKey(ctx context.Context, key, value string) (ctrl.Result, error) {
-logger := log.FromContext(ctx)
-cm := &corev1.ConfigMap{}
-err := r.Get(ctx, types.NamespacedName{Name: configMapName, Namespace: r.TargetNamespace}, cm)
-if errors.IsNotFound(err) {
-cm = &corev1.ConfigMap{
-ObjectMeta: metav1.ObjectMeta{
-Name:      configMapName,
-Namespace: r.TargetNamespace,
-},
-Data: map[string]string{key: value},
-}
-if err := r.Create(ctx, cm); err != nil {
-return ctrl.Result{}, fmt.Errorf("failed to create ConfigMap: %w", err)
-}
-logger.Info("Created ConfigMap", "name", configMapName, "namespace", r.TargetNamespace)
-return ctrl.Result{}, nil
-}
-if err != nil {
-return ctrl.Result{}, fmt.Errorf("failed to get ConfigMap: %w", err)
-}
-
-if cm.Data == nil {
-cm.Data = make(map[string]string)
-}
-cm.Data[key] = value
-if err := r.Update(ctx, cm); err != nil {
-return ctrl.Result{}, fmt.Errorf("failed to update ConfigMap: %w", err)
-}
-logger.Info("Updated ConfigMap", "name", configMapName, "namespace", r.TargetNamespace, "key", key)
-return ctrl.Result{}, nil
 }
 
 func (r *GatusEndpointReconciler) SetupWithManager(mgr ctrl.Manager) error {

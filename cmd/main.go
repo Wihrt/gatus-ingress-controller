@@ -58,6 +58,11 @@ if targetNamespace == "" {
 targetNamespace = "gatus"
 }
 
+configMapName := os.Getenv("CONFIG_MAP_NAME")
+if configMapName == "" {
+configMapName = "gatus-config"
+}
+
 if err = (&controller.IngressReconciler{
 Client:       mgr.GetClient(),
 Scheme:       mgr.GetScheme(),
@@ -67,18 +72,38 @@ setupLog.Error(err, "unable to create controller", "controller", "Ingress")
 os.Exit(1)
 }
 
-if err = (&controller.GatusAlertReconciler{
-Client: mgr.GetClient(),
-Scheme: mgr.GetScheme(),
-}).SetupWithManager(mgr); err != nil {
-setupLog.Error(err, "unable to create controller", "controller", "GatusAlert")
-os.Exit(1)
-}
+	if err = (&controller.GatusAlertReconciler{
+		Client:          mgr.GetClient(),
+		TargetNamespace: targetNamespace,
+		ConfigMapName:   configMapName,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "GatusAlert")
+		os.Exit(1)
+	}
+
+	if err = (&controller.GatusAnnouncementReconciler{
+		Client:          mgr.GetClient(),
+		TargetNamespace: targetNamespace,
+		ConfigMapName:   configMapName,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "GatusAnnouncement")
+		os.Exit(1)
+	}
+
+	if err = (&controller.GatusMaintenanceReconciler{
+		Client:          mgr.GetClient(),
+		TargetNamespace: targetNamespace,
+		ConfigMapName:   configMapName,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "GatusMaintenance")
+		os.Exit(1)
+	}
 
 if err = (&controller.GatusEndpointReconciler{
 Client:          mgr.GetClient(),
 Scheme:          mgr.GetScheme(),
 TargetNamespace: targetNamespace,
+ConfigMapName:   configMapName,
 }).SetupWithManager(mgr); err != nil {
 setupLog.Error(err, "unable to create controller", "controller", "GatusEndpoint")
 os.Exit(1)
@@ -86,8 +111,8 @@ os.Exit(1)
 
 if err = (&controller.GatusExternalEndpointReconciler{
 Client:          mgr.GetClient(),
-Scheme:          mgr.GetScheme(),
 TargetNamespace: targetNamespace,
+ConfigMapName:   configMapName,
 }).SetupWithManager(mgr); err != nil {
 setupLog.Error(err, "unable to create controller", "controller", "GatusExternalEndpoint")
 os.Exit(1)

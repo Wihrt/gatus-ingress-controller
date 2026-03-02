@@ -183,7 +183,11 @@ func TestIngressReconciler_UpdatesExistingEndpoint(t *testing.T) {
 			Name:      "my-ingress-app-example-com",
 			Namespace: "default",
 			Labels: map[string]string{
-				ingressLabel: "my-ingress",
+				managedByLabel: "gatus-ingress-controller",
+				ingressLabel:   "my-ingress",
+			},
+			OwnerReferences: []metav1.OwnerReference{
+				{APIVersion: "networking.k8s.io/v1", Kind: "Ingress", Name: "my-ingress"},
 			},
 		},
 		Spec: monitoringv1alpha1.GatusEndpointSpec{
@@ -374,4 +378,70 @@ func TestIngressReconciler_ParsesAlertsAnnotation(t *testing.T) {
 	if endpoint.Spec.Alerts[1].Name != "alert-email" {
 		t.Errorf("alert[1].Name = %q, want %q", endpoint.Spec.Alerts[1].Name, "alert-email")
 	}
+}
+
+func TestIngressReconciler_SkipsUserManagedEndpoint(t *testing.T) {
+ctx := context.Background()
+scheme := newTestScheme(t)
+
+className := "traefik"
+ingress := &networkingv1.Ingress{
+ObjectMeta: metav1.ObjectMeta{
+Name:      "my-ingress",
+Namespace: "default",
+Annotations: map[string]string{
+annotationGroup: "from-ingress",
+},
+},
+Spec: networkingv1.IngressSpec{
+IngressClassName: &className,
+Rules: []networkingv1.IngressRule{
+{Host: "app.example.com"},
+},
+},
+}
+
+// User-created CR: same name as what the controller would generate, but NO ownerReferences.
+userEndpoint := &monitoringv1alpha1.GatusEndpoint{
+ObjectMeta: metav1.ObjectMeta{
+Name:      "my-ingress-app-example-com",
+Namespace: "default",
+// No OwnerReferences — marks this as user-managed.
+},
+Spec: monitoringv1alpha1.GatusEndpointSpec{
+Name:  "custom-name",
+Group: "user-defined-group",
+URL:   "https://custom.example.com",
+},
+}
+
+fakeClient := fake.NewClientBuilder().
+WithScheme(scheme).
+WithObjects(ingress, userEndpoint).
+Build()
+
+r := &IngressReconciler{
+Client:       fakeClient,
+Scheme:       scheme,
+IngressClass: "traefik",
+}
+
+req := ctrl.Request{NamespacedName: types.NamespacedName{Name: "my-ingress", Namespace: "default"}}
+_, err := r.Reconcile(ctx, req)
+if err != nil {
+t.Fatalf("Reconcile returned error: %v", err)
+}
+
+endpoint := &monitoringv1alpha1.GatusEndpoint{}
+if err := fakeClient.Get(ctx, types.NamespacedName{Name: "my-ingress-app-example-com", Namespace: "default"}, endpoint); err != nil {
+t.Fatalf("GatusEndpoint not found: %v", err)
+}
+
+// The user's spec must be preserved — the controller must NOT have overwritten it.
+if endpoint.Spec.Group != "user-defined-group" {
+t.Errorf("GatusEndpoint Group = %q, want %q (user-managed CR must not be overwritten)", endpoint.Spec.Group, "user-defined-group")
+}
+if endpoint.Spec.URL != "https://custom.example.com" {
+t.Errorf("GatusEndpoint URL = %q, want %q (user-managed CR must not be overwritten)", endpoint.Spec.URL, "https://custom.example.com")
+}
 }

@@ -105,4 +105,67 @@ for i in $(seq 1 30); do
   sleep 1
 done
 
+# ── 9. User-managed GatusEndpoint must not be overwritten ─────────────────────
+echo "==> Testing that user-managed GatusEndpoint is not overwritten by auto-generation..."
+
+OVERRIDE_INGRESS="test-override"
+OVERRIDE_ENDPOINT_NAME="test-override-test-override-example-com"
+CUSTOM_URL="https://custom-override.example.com"
+CUSTOM_GROUP="user-managed-group"
+
+# Create a manual GatusEndpoint (no ownerReferences).
+kubectl apply -f - <<EOF
+apiVersion: monitoring.gatus.io/v1alpha1
+kind: GatusEndpoint
+metadata:
+  name: ${OVERRIDE_ENDPOINT_NAME}
+  namespace: default
+spec:
+  name: "Override Test"
+  group: "${CUSTOM_GROUP}"
+  url: "${CUSTOM_URL}"
+  conditions:
+    - "[STATUS] == 200"
+EOF
+
+# Create an Ingress with the same host — controller would normally generate the same endpoint name.
+kubectl apply -f - <<EOF
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ${OVERRIDE_INGRESS}
+  namespace: default
+  annotations:
+    kubernetes.io/ingress.class: "${INGRESS_CLASS}"
+    gatus.io/enabled: "true"
+    gatus.io/group: "auto-group"
+spec:
+  ingressClassName: "${INGRESS_CLASS}"
+  rules:
+    - host: test-override.example.com
+EOF
+
+# Give controller time to reconcile.
+sleep 10
+
+# Assert the user-managed spec is preserved.
+ACTUAL_URL=$(kubectl get gatusendpoint "${OVERRIDE_ENDPOINT_NAME}" -n default -o jsonpath='{.spec.url}')
+if [ "${ACTUAL_URL}" != "${CUSTOM_URL}" ]; then
+  echo "ERROR: User-managed GatusEndpoint URL was overwritten! got '${ACTUAL_URL}', want '${CUSTOM_URL}'"
+  kubectl get gatusendpoint "${OVERRIDE_ENDPOINT_NAME}" -n default -o yaml
+  exit 1
+fi
+echo "    URL preserved: ${ACTUAL_URL}"
+
+ACTUAL_GROUP=$(kubectl get gatusendpoint "${OVERRIDE_ENDPOINT_NAME}" -n default -o jsonpath='{.spec.group}')
+if [ "${ACTUAL_GROUP}" != "${CUSTOM_GROUP}" ]; then
+  echo "ERROR: User-managed GatusEndpoint group was overwritten! got '${ACTUAL_GROUP}', want '${CUSTOM_GROUP}'"
+  exit 1
+fi
+echo "    Group preserved: ${ACTUAL_GROUP}"
+
+# Cleanup override test resources.
+kubectl delete ingress "${OVERRIDE_INGRESS}" -n default --ignore-not-found
+kubectl delete gatusendpoint "${OVERRIDE_ENDPOINT_NAME}" -n default --ignore-not-found
+
 echo "==> E2E tests PASSED."

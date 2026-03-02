@@ -111,6 +111,10 @@ func (r *HTTPRouteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		} else if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to get GatusEndpoint: %w", err)
 		} else {
+			if len(endpoint.OwnerReferences) == 0 {
+				logger.Info("GatusEndpoint exists without ownerReferences — user-managed, skipping update", "name", endpointName)
+				continue
+			}
 			endpoint.Spec = desiredSpec
 			if err := r.Update(ctx, endpoint); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to update GatusEndpoint: %w", err)
