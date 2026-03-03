@@ -136,20 +136,18 @@ func (r *GatusEndpointReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	})
 
 	// Deduplicate by spec.name: first alphabetically wins; log a warning for conflicts.
-	byName := make(map[string]monitoringv1alpha1.GatusEndpoint, len(endpointList.Items))
+	// Iterate over the already-sorted list to preserve deterministic output order.
+	seenNames := make(map[string]string, len(endpointList.Items)) // spec.name -> namespace/name of keeper
+	var endpoints []gatusEndpointYAML
 	for _, ep := range endpointList.Items {
-		if existing, conflict := byName[ep.Spec.Name]; conflict {
+		if keeper, conflict := seenNames[ep.Spec.Name]; conflict {
 			logger.Info("Duplicate spec.name detected — keeping first alphabetically, skipping second",
 				"spec.name", ep.Spec.Name,
-				"kept", existing.Namespace+"/"+existing.Name,
+				"kept", keeper,
 				"skipped", ep.Namespace+"/"+ep.Name)
 			continue
 		}
-		byName[ep.Spec.Name] = ep
-	}
-
-	var endpoints []gatusEndpointYAML
-	for _, ep := range byName {
+		seenNames[ep.Spec.Name] = ep.Namespace + "/" + ep.Name
 		alertYAMLs, err := r.resolveAlerts(ctx, ep.Spec.Alerts, ep.Namespace)
 		if err != nil {
 			logger.Error(err, "Failed to resolve alerts for endpoint", "name", ep.Name)
