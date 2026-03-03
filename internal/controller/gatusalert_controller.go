@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -36,7 +37,12 @@ func (r *GatusAlertReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 	if alert.Spec.AlertingConfigRef != "" {
 		cfg := &monitoringv1alpha1.GatusAlertingConfig{}
-		if err := r.Get(ctx, client.ObjectKey{Name: alert.Spec.AlertingConfigRef, Namespace: req.Namespace}, cfg); err == nil {
+		err := r.Get(ctx, client.ObjectKey{Name: alert.Spec.AlertingConfigRef, Namespace: req.Namespace}, cfg)
+		if err != nil && !apierrors.IsNotFound(err) {
+			logger.Error(err, "failed to get GatusAlertingConfig", "name", alert.Spec.AlertingConfigRef, "namespace", req.Namespace)
+			return ctrl.Result{}, fmt.Errorf("failed to get GatusAlertingConfig %q: %w", alert.Spec.AlertingConfigRef, err)
+		}
+		if err == nil {
 			// Trust the GatusAlertingConfig's own status condition.
 			for _, cond := range cfg.Status.Conditions {
 				if cond.Type == "Valid" && cond.Status == metav1.ConditionTrue {

@@ -5,12 +5,14 @@ import (
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	monitoringv1alpha1 "github.com/Wihrt/gatus-ingress-controller/api/v1alpha1"
 )
@@ -30,6 +32,14 @@ func reconcileAlert(t *testing.T, r *GatusAlertReconciler, name, namespace strin
 		t.Fatalf("Reconcile returned unexpected error: %v", err)
 	}
 	return result
+}
+
+func reconcileAlertExpectError(t *testing.T, r *GatusAlertReconciler, name, namespace string) error {
+	t.Helper()
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: name, Namespace: namespace},
+	})
+	return err
 }
 
 func getAlertCondition(t *testing.T, fakeClient client.Client, name, namespace, condType string) *metav1.Condition {
@@ -193,5 +203,56 @@ func TestGatusAlertReconciler_InvalidAlertingConfigNotCounted(t *testing.T) {
 	}
 	if cond.Status != metav1.ConditionFalse {
 		t.Errorf("expected Configured=False when alerting config is invalid, got %v", cond.Status)
+	}
+}
+
+// errInjectingClient wraps a client.Client and returns a given error when Get
+// is called for objects of a specific GVK.
+type errInjectingClient struct {
+	client.Client
+	gvk     schema.GroupVersionKind
+	getErr  error
+}
+
+func (c *errInjectingClient) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+	gvks, _, _ := c.Client.Scheme().ObjectKinds(obj)
+	for _, g := range gvks {
+		if g == c.gvk {
+			return c.getErr
+		}
+	}
+	return c.Client.Get(ctx, key, obj, opts...)
+}
+
+// TestGatusAlertReconciler_TransientErrorRequeues verifies that a transient (non-NotFound)
+// error when fetching GatusAlertingConfig is returned (causing a requeue), not silently ignored.
+func TestGatusAlertReconciler_TransientErrorRequeues(t *testing.T) {
+	s := newTestScheme(t)
+	alert := &monitoringv1alpha1.GatusAlert{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-slack", Namespace: "default"},
+		Spec:       monitoringv1alpha1.GatusAlertSpec{AlertingConfigRef: "slack-cfg"},
+	}
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(s).
+		WithObjects(alert).
+		WithStatusSubresource(&monitoringv1alpha1.GatusAlert{}).
+		Build()
+
+	transientErr := apierrors.NewServiceUnavailable("apiserver unavailable")
+	cfgGVK := schema.GroupVersionKind{
+		Group:   monitoringv1alpha1.GroupVersion.Group,
+		Version: monitoringv1alpha1.GroupVersion.Version,
+		Kind:    "GatusAlertingConfig",
+	}
+	injectingClient := &errInjectingClient{
+		Client: fakeClient,
+		gvk:    cfgGVK,
+		getErr: transientErr,
+	}
+
+	r := newAlertReconciler(injectingClient)
+	err := reconcileAlertExpectError(t, r, "my-slack", "default")
+	if err == nil {
+		t.Fatal("expected error to be returned for transient Get failure, got nil")
 	}
 }
