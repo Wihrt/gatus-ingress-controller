@@ -1,0 +1,103 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: gatusendpoint
+spec:
+  concurrent: false
+  steps:
+    # ── Step 1: Basic endpoint created in Secret ──────────────────────────────
+    - name: "[GatusEndpoint] basic endpoint created in Secret"
+      try:
+        - apply:
+            resource:
+              apiVersion: monitoring.gatus.io/v1alpha1
+              kind: GatusEndpoint
+              metadata:
+                name: test-app
+              spec:
+                name: "test-app"
+                group: "e2e"
+                url: "https://test-app.example.com"
+                conditions:
+                  - "[STATUS] == 200"
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: gatus-secrets
+                namespace: gatus
+              "(contains(base64_decode(lookup(data, 'endpoints.yaml')), 'test-app'))": true
+              "(contains(base64_decode(lookup(data, 'endpoints.yaml')), 'https://test-app.example.com'))": true
+              "(contains(base64_decode(lookup(data, 'endpoints.yaml')), '[STATUS] == 200'))": true
+      catch:
+        - describe:
+            apiVersion: monitoring.gatus.io/v1alpha1
+            kind: GatusEndpoint
+            name: test-app
+        - script:
+            content: kubectl get secret gatus-secrets -n gatus -o jsonpath='{.data.endpoints\.yaml}' | base64 -d
+
+    # ── Step 2: Default condition [STATUS] == 200 injected when empty ─────────
+    - name: "[GatusEndpoint] default condition injected when conditions is empty"
+      try:
+        - apply:
+            resource:
+              apiVersion: monitoring.gatus.io/v1alpha1
+              kind: GatusEndpoint
+              metadata:
+                name: test-no-conditions
+              spec:
+                name: "test-no-conditions"
+                group: "e2e"
+                url: "https://no-conditions.example.com"
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: gatus-secrets
+                namespace: gatus
+              "(contains(base64_decode(lookup(data, 'endpoints.yaml')), 'no-conditions'))": true
+              "(contains(base64_decode(lookup(data, 'endpoints.yaml')), '[STATUS] == 200'))": true
+      catch:
+        - describe:
+            apiVersion: monitoring.gatus.io/v1alpha1
+            kind: GatusEndpoint
+            name: test-no-conditions
+        - script:
+            content: kubectl get secret gatus-secrets -n gatus -o jsonpath='{.data.endpoints\.yaml}' | base64 -d
+
+    # ── Step 3: Multiple conditions persisted ────────────────────────────────
+    - name: "[GatusEndpoint] multiple conditions persisted"
+      try:
+        - apply:
+            resource:
+              apiVersion: monitoring.gatus.io/v1alpha1
+              kind: GatusEndpoint
+              metadata:
+                name: test-custom-spec
+              spec:
+                name: "custom-service"
+                group: "user-managed-group"
+                url: "https://custom.example.com"
+                conditions:
+                  - "[STATUS] == 200"
+                  - "[RESPONSE_TIME] < 500"
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: gatus-secrets
+                namespace: gatus
+              "(contains(base64_decode(lookup(data, 'endpoints.yaml')), 'custom-service'))": true
+              "(contains(base64_decode(lookup(data, 'endpoints.yaml')), 'user-managed-group'))": true
+              "(contains(base64_decode(lookup(data, 'endpoints.yaml')), 'RESPONSE_TIME'))": true
+      catch:
+        - describe:
+            apiVersion: monitoring.gatus.io/v1alpha1
+            kind: GatusEndpoint
+            name: test-custom-spec
+        - script:
+            content: kubectl get secret gatus-secrets -n gatus -o jsonpath='{.data.endpoints\.yaml}' | base64 -d

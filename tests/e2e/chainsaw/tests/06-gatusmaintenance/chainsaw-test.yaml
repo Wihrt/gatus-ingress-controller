@@ -1,0 +1,68 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: gatusmaintenance
+spec:
+  concurrent: false
+  steps:
+    # ── Step 1: Maintenance window aggregated into ConfigMap ──────────────────
+    - name: "[GatusMaintenance] aggregated into maintenance.yaml ConfigMap"
+      try:
+        - apply:
+            resource:
+              apiVersion: monitoring.gatus.io/v1alpha1
+              kind: GatusMaintenance
+              metadata:
+                name: test-maintenance
+              spec:
+                enabled: true
+                start: "23:00"
+                duration: "1h"
+                timezone: "Europe/Paris"
+                every:
+                  - Monday
+                  - Thursday
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: gatus-config
+                namespace: gatus
+              "(contains(lookup(data, 'maintenance.yaml'), '23:00'))": true
+              "(contains(lookup(data, 'maintenance.yaml'), '1h'))": true
+              "(contains(lookup(data, 'maintenance.yaml'), 'Europe/Paris'))": true
+              "(contains(lookup(data, 'maintenance.yaml'), 'Monday'))": true
+      catch:
+        - describe:
+            apiVersion: monitoring.gatus.io/v1alpha1
+            kind: GatusMaintenance
+            name: test-maintenance
+        - script:
+            content: kubectl get configmap gatus-config -n gatus -o jsonpath='{.data.maintenance\.yaml}'
+
+    # ── Step 2: Deduplication — first alphabetically wins ────────────────────
+    - name: "[GatusMaintenance] deduplication keeps first alphabetically (aaa-maintenance wins)"
+      try:
+        - apply:
+            resource:
+              apiVersion: monitoring.gatus.io/v1alpha1
+              kind: GatusMaintenance
+              metadata:
+                name: aaa-maintenance
+              spec:
+                enabled: true
+                start: "02:00"
+                duration: "30m"
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: gatus-config
+                namespace: gatus
+              "(contains(lookup(data, 'maintenance.yaml'), '02:00'))": true
+              "(contains(lookup(data, 'maintenance.yaml'), '23:00'))": false
+      catch:
+        - script:
+            content: kubectl get configmap gatus-config -n gatus -o jsonpath='{.data.maintenance\.yaml}'

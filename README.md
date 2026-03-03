@@ -3,9 +3,7 @@
 [![Build](https://github.com/Wihrt/gatus-ingress-controller/actions/workflows/main.yml/badge.svg)](https://github.com/Wihrt/gatus-ingress-controller/actions/workflows/main.yml)
 [![Coverage](https://codecov.io/gh/Wihrt/gatus-ingress-controller/graph/badge.svg)](https://codecov.io/gh/Wihrt/gatus-ingress-controller)
 
-A Kubernetes controller that automatically generates [Gatus](https://github.com/TwiN/gatus) monitoring endpoints from Ingress and Gateway API HTTPRoute resources.
-
-When an Ingress is created or updated, the controller creates a `GatusEndpoint` custom resource for each hostname. All endpoints are then aggregated into a single ConfigMap that Gatus reads to configure its monitoring.
+A Kubernetes controller that manages [Gatus](https://github.com/TwiN/gatus) monitoring endpoints via custom resources, automatically aggregating them into a shared ConfigMap that Gatus reads for its configuration.
 
 ## How it works
 
@@ -22,8 +20,6 @@ ConfigMap "gatus-config"
 ```
 
 Each reconciler watches its own CRD cluster-wide, builds the corresponding Gatus config section, and writes it as a dedicated key inside the shared ConfigMap. The ConfigMap must be pre-created — the controller never creates or deletes it.
-
-Ingresses and HTTPRoutes are also watched: for each hostname the controller automatically creates a `GatusEndpoint` CR (or removes it when `gatus.io/enabled: "false"`), which is then picked up by the `GatusEndpointReconciler`.
 
 ## Installation
 
@@ -72,70 +68,17 @@ helm install gatus-ingress-controller oci://ghcr.io/wihrt/charts/gatus-ingress-c
 
 | Value | Default | Description |
 |---|---|---|
-| `ingressClass` | `traefik` | Only watch Ingresses with this class |
 | `targetNamespace` | `gatus` | Namespace where the ConfigMap is written |
 | `configMapName` | `gatus-config` | Name of the ConfigMap to append endpoints to (must pre-exist) |
-| `gatewayApi.enabled` | `false` | Enable HTTPRoute controller (requires Gateway API CRDs) |
-| `gatewayApi.gatewayNames` | `""` | Comma-separated Gateway names to filter HTTPRoutes (empty = all) |
 | `image.repository` | `ghcr.io/wihrt/gatus-ingress-controller` | Controller image |
 | `image.tag` | `latest` | Image tag |
 | `replicaCount` | `1` | Number of replicas |
 
 ## Usage
 
-### Automatic monitoring from an Ingress
+### Create a monitoring endpoint (GatusEndpoint)
 
-By default, any Ingress matching the configured ingress class gets a Gatus `HTTP 200` check automatically:
-
-```yaml
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: my-app
-spec:
-  ingressClassName: traefik
-  rules:
-    - host: my-app.example.com
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: my-app
-                port:
-                  number: 80
-```
-
-This creates a `GatusEndpoint` monitoring `https://my-app.example.com` with condition `[STATUS] == 200`.
-
-### Annotations
-
-Control monitoring behaviour with annotations on your Ingress (or HTTPRoute):
-
-| Annotation | Values | Description |
-|---|---|---|
-| `gatus.io/enabled` | `"true"` / `"false"` | Disable monitoring for this resource (default: enabled) |
-| `gatus.io/group` | any string | Group name shown on the Gatus dashboard (default: `external`) |
-| `gatus.io/alerts` | comma-separated names | `GatusAlert` resources to attach |
-
-```yaml
-metadata:
-  annotations:
-    gatus.io/enabled: "true"
-    gatus.io/group: "production"
-    gatus.io/alerts: "slack-alert, pagerduty-alert"
-```
-
-### Disable monitoring for a specific Ingress
-
-```yaml
-metadata:
-  annotations:
-    gatus.io/enabled: "false"
-```
-
-### Configure an alert provider (GatusAlert)
+Define a `GatusEndpoint` CR for any service you want Gatus to monitor. If no conditions are specified, the controller defaults to `[STATUS] == 200`:
 
 A `GatusAlert` serves two purposes: it configures the alert provider in Gatus (webhook URL, etc.) **and** defines the default thresholds used when the alert is referenced from an endpoint. One CR per provider type — if two CRs share the same type, the first (alphabetically) is used and a warning is logged.
 
@@ -154,12 +97,12 @@ spec:
   description: "Endpoint is down"
 ```
 
-Then reference it from an Ingress:
+Reference it from a `GatusEndpoint`:
 
 ```yaml
-metadata:
-  annotations:
-    gatus.io/alerts: "slack-alert"
+spec:
+  alerts:
+    - name: slack-alert
 ```
 
 Supported alert types: `slack`, `discord`, `teams`, `teams-workflows`, `pagerduty`, `opsgenie`, `telegram`, `email`, `ntfy`, and [many more](https://github.com/TwiN/gatus#alerting).
@@ -205,18 +148,16 @@ spec:
 
 ### Create a monitoring endpoint manually (GatusEndpoint)
 
-For resources that are not backed by an Ingress (e.g. an external API, a TCP port, a DNS record):
-
 ```yaml
 apiVersion: monitoring.gatus.io/v1alpha1
 kind: GatusEndpoint
 metadata:
-  name: external-api
+  name: my-app
   namespace: default
 spec:
-  name: "External API"
-  group: "external"
-  url: "https://api.example.com/health"
+  name: "My App"
+  group: "production"
+  url: "https://my-app.example.com/health"
   interval: "60s"
   conditions:
     - "[STATUS] == 200"
@@ -226,7 +167,9 @@ spec:
     - name: slack-alert
 ```
 
-> **Override auto-generated endpoints:** if a `GatusEndpoint` CR is created manually (without the `gatus.io/managed-by` label) and shares the same name or Gatus display name as an auto-generated CR, the **manual CR always wins**. The auto-generated CR is not updated and its config is excluded from `endpoints.yaml`.
+If `conditions` is omitted, the controller injects `[STATUS] == 200` automatically.
+
+### Configure an alert provider (GatusAlert)
 
 ### External endpoint (status pushed by your app)
 
@@ -247,18 +190,6 @@ spec:
   alerts:
     - name: slack-alert
 ```
-
-### Gateway API (HTTPRoute)
-
-Enable HTTPRoute support when your cluster has the Gateway API CRDs installed:
-
-```bash
-helm upgrade gatus-ingress-controller oci://ghcr.io/wihrt/charts/gatus-ingress-controller \
-  --set gatewayApi.enabled=true \
-  --set gatewayApi.gatewayNames="my-gateway"
-```
-
-HTTPRoutes support the same `gatus.io/*` annotations as Ingresses.
 
 ## Development
 

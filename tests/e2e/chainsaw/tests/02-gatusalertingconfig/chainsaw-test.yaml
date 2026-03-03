@@ -1,0 +1,82 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: gatusalertingconfig
+spec:
+  concurrent: false
+  steps:
+    # ── Step 1: Valid Slack config aggregated into alerting.yaml Secret ───────
+    - name: "[GatusAlertingConfig] valid Slack config aggregated into alerting.yaml"
+      try:
+        - apply:
+            resource:
+              apiVersion: monitoring.gatus.io/v1alpha1
+              kind: GatusAlertingConfig
+              metadata:
+                name: slack-config
+              spec:
+                type: slack
+                config:
+                  webhook-url: "https://hooks.slack.com/services/test/test/test"
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: gatus-secrets
+                namespace: gatus
+              "(contains(base64_decode(lookup(data, 'alerting.yaml')), 'hooks.slack.com'))": true
+      catch:
+        - describe:
+            apiVersion: monitoring.gatus.io/v1alpha1
+            kind: GatusAlertingConfig
+            name: slack-config
+        - script:
+            content: kubectl get secret gatus-secrets -n gatus -o jsonpath='{.data.alerting\.yaml}' | base64 -d
+
+    # ── Step 2: Valid=True status condition set ───────────────────────────────
+    - name: "[GatusAlertingConfig] Valid=True condition set for valid config"
+      try:
+        - assert:
+            resource:
+              apiVersion: monitoring.gatus.io/v1alpha1
+              kind: GatusAlertingConfig
+              metadata:
+                name: slack-config
+              status:
+                conditions:
+                  - type: Valid
+                    status: "True"
+      catch:
+        - describe:
+            apiVersion: monitoring.gatus.io/v1alpha1
+            kind: GatusAlertingConfig
+            name: slack-config
+
+    # ── Step 3: Valid=False for invalid config (missing required field) ───────
+    - name: "[GatusAlertingConfig] Valid=False condition set for invalid config"
+      try:
+        - error:
+            resource:
+              apiVersion: monitoring.gatus.io/v1alpha1
+              kind: GatusAlertingConfig
+              metadata:
+                name: invalid-discord
+              spec:
+                type: discord
+                config:
+                  some-other-key: "no-webhook"
+
+    # ── Step 4: Webhook rejects second config of same type (uniqueness) ────────
+    - name: "[GatusAlertingConfig] Webhook rejects second Slack config (cluster-wide uniqueness)"
+      try:
+        - error:
+            resource:
+              apiVersion: monitoring.gatus.io/v1alpha1
+              kind: GatusAlertingConfig
+              metadata:
+                name: another-slack-config
+              spec:
+                type: slack
+                config:
+                  webhook-url: "https://hooks.slack.com/services/other/other/other"

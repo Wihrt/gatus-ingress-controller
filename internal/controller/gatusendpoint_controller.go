@@ -3,6 +3,7 @@ package controller
 import (
 "context"
 "fmt"
+"sort"
 
 "k8s.io/apimachinery/pkg/runtime"
 "k8s.io/apimachinery/pkg/types"
@@ -19,12 +20,12 @@ const (
 )
 
 // GatusEndpointReconciler reconciles GatusEndpoint resources and aggregates them
-// into a ConfigMap containing the Gatus endpoints configuration.
+// into a Secret containing the Gatus endpoints configuration.
 type GatusEndpointReconciler struct {
 client.Client
 Scheme          *runtime.Scheme
 TargetNamespace string
-ConfigMapName   string
+SecretName      string
 }
 
 // --- Internal YAML representation types (matching Gatus config format) ---
@@ -54,13 +55,14 @@ ExtraLabels        map[string]string         `yaml:"extra-labels,omitempty"`
 }
 
 type gatusAlertYAML struct {
-Type                    string `yaml:"type"`
-Enabled                 bool   `yaml:"enabled,omitempty"`
-Description             string `yaml:"description,omitempty"`
-FailureThreshold        int    `yaml:"failure-threshold,omitempty"`
-SuccessThreshold        int    `yaml:"success-threshold,omitempty"`
-SendOnResolved          bool   `yaml:"send-on-resolved,omitempty"`
-MinimumReminderInterval string `yaml:"minimum-reminder-interval,omitempty"`
+Type                    string                 `yaml:"type"`
+Enabled                 bool                   `yaml:"enabled,omitempty"`
+Description             string                 `yaml:"description,omitempty"`
+FailureThreshold        int                    `yaml:"failure-threshold,omitempty"`
+SuccessThreshold        int                    `yaml:"success-threshold,omitempty"`
+SendOnResolved          bool                   `yaml:"send-on-resolved,omitempty"`
+MinimumReminderInterval string                 `yaml:"minimum-reminder-interval,omitempty"`
+ProviderOverride        map[string]interface{} `yaml:"provider-override,omitempty"`
 }
 
 type gatusDNSYAML struct {
@@ -126,39 +128,36 @@ if err := r.List(ctx, endpointList); err != nil {
 return ctrl.Result{}, fmt.Errorf("failed to list GatusEndpoints: %w", err)
 }
 
-// Deduplicate by spec.name: user-managed CRs (no managedByLabel) win over auto-generated ones.
-// Pass 1: insert auto-generated CRs.
-type indexedEP struct {
-ep      monitoringv1alpha1.GatusEndpoint
-managed bool
-}
-byName := make(map[string]indexedEP, len(endpointList.Items))
+// Sort for deterministic output; first alphabetically (namespace/name) wins on spec.name conflict.
+sort.Slice(endpointList.Items, func(i, j int) bool {
+ki := endpointList.Items[i].Namespace + "/" + endpointList.Items[i].Name
+kj := endpointList.Items[j].Namespace + "/" + endpointList.Items[j].Name
+return ki < kj
+})
+
+// Deduplicate by spec.name: first alphabetically wins; log a warning for conflicts.
+byName := make(map[string]monitoringv1alpha1.GatusEndpoint, len(endpointList.Items))
 for _, ep := range endpointList.Items {
-managed := len(ep.OwnerReferences) > 0
-if managed {
-byName[ep.Spec.Name] = indexedEP{ep: ep, managed: true}
-}
-}
-// Pass 2: user-managed CRs overwrite auto-generated ones with the same spec.name.
-for _, ep := range endpointList.Items {
-managed := len(ep.OwnerReferences) > 0
-if !managed {
-if existing, conflict := byName[ep.Spec.Name]; conflict && existing.managed {
-logger.Info("User-managed GatusEndpoint overrides auto-generated one",
+if existing, conflict := byName[ep.Spec.Name]; conflict {
+logger.Info("Duplicate spec.name detected — keeping first alphabetically, skipping second",
 "spec.name", ep.Spec.Name,
-"user-cr", ep.Namespace+"/"+ep.Name,
-"auto-cr", existing.ep.Namespace+"/"+existing.ep.Name)
+"kept", existing.Namespace+"/"+existing.Name,
+"skipped", ep.Namespace+"/"+ep.Name)
+continue
 }
-byName[ep.Spec.Name] = indexedEP{ep: ep, managed: false}
-}
+byName[ep.Spec.Name] = ep
 }
 
 var endpoints []gatusEndpointYAML
-for _, item := range byName {
-ep := item.ep
+for _, ep := range byName {
 alertYAMLs, err := r.resolveAlerts(ctx, ep.Spec.Alerts, ep.Namespace)
 if err != nil {
 logger.Error(err, "Failed to resolve alerts for endpoint", "name", ep.Name)
+}
+
+conditions := ep.Spec.Conditions
+if len(conditions) == 0 {
+conditions = []string{"[STATUS] == 200"}
 }
 
 epYAML := gatusEndpointYAML{
@@ -171,7 +170,7 @@ Interval:    ep.Spec.Interval,
 Body:        ep.Spec.Body,
 Headers:     ep.Spec.Headers,
 GraphQL:     ep.Spec.GraphQL,
-Conditions:  ep.Spec.Conditions,
+Conditions:  conditions,
 Alerts:      alertYAMLs,
 ExtraLabels: ep.Spec.ExtraLabels,
 }
@@ -225,7 +224,7 @@ if err != nil {
 return ctrl.Result{}, fmt.Errorf("failed to marshal Gatus endpoints config: %w", err)
 }
 
-return upsertConfigMapKey(ctx, r.Client, r.TargetNamespace, r.ConfigMapName, endpointsKey, string(data))
+return upsertSecretKey(ctx, r.Client, r.TargetNamespace, r.SecretName, endpointsKey, string(data))
 }
 
 // resolveAlerts looks up each GatusAlertRef and merges its overrides with the referenced GatusAlert.
@@ -243,8 +242,15 @@ logger.Error(err, "Failed to get GatusAlert", "name", ref.Name, "namespace", ns)
 continue
 }
 
+// Resolve provider type from the referenced GatusAlertingConfig.
+alertingConfig := &monitoringv1alpha1.GatusAlertingConfig{}
+if err := r.Get(ctx, types.NamespacedName{Name: alert.Spec.AlertingConfigRef, Namespace: ns}, alertingConfig); err != nil {
+	logger.Error(err, "Failed to get GatusAlertingConfig", "name", alert.Spec.AlertingConfigRef, "namespace", ns)
+	continue
+}
+
 y := gatusAlertYAML{
-Type:                    alert.Spec.Type,
+Type:                    alertingConfig.Spec.Type,
 Enabled:                 alert.Spec.Enabled,
 Description:             alert.Spec.Description,
 FailureThreshold:        alert.Spec.FailureThreshold,
@@ -253,7 +259,19 @@ SendOnResolved:          alert.Spec.SendOnResolved,
 MinimumReminderInterval: alert.Spec.MinimumReminderInterval,
 }
 
-// Apply per-endpoint overrides from the GatusAlertRef.
+// Apply ProviderOverride from the GatusAlert spec.
+if len(alert.Spec.ProviderOverride) > 0 {
+if overrideMap, err := apiExtMapToInterface(alert.Spec.ProviderOverride); err != nil {
+logger.Error(err, "Failed to parse alert ProviderOverride")
+} else {
+if y.ProviderOverride == nil {
+y.ProviderOverride = make(map[string]interface{})
+}
+for k, v := range overrideMap {
+y.ProviderOverride[k] = v
+}
+}
+}
 if ref.Description != "" {
 y.Description = ref.Description
 }

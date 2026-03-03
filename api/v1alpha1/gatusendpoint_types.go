@@ -1,10 +1,10 @@
 package v1alpha1
 
 import (
-metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// GatusAlertRef references a GatusAlert resource and optionally overrides per-endpoint behavior.
+// GatusAlertRef references a GatusAlert resource and optionally overrides per-endpoint alert behavior.
 type GatusAlertRef struct {
 // Name is the name of the GatusAlert resource.
 // +kubebuilder:validation:Required

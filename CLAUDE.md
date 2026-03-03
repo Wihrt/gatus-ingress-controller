@@ -4,41 +4,41 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Kubernetes controller that automatically generates [Gatus](https://github.com/TwiN/gatus) monitoring endpoints from Ingress and Gateway API HTTPRoute resources. It watches cluster resources and aggregates monitoring configurations into a shared ConfigMap.
+Kubernetes controller that manages [Gatus](https://github.com/TwiN/gatus) monitoring endpoints via custom resources, aggregating configurations into a shared ConfigMap that Gatus reads.
 
 ## Commands
 
 Tools managed via [mise](https://mise.jdx.dev/) (`mise.toml`), tasks via [Task](https://taskfile.dev/) (`Taskfile.yml`).
 
 ```bash
-mise install              # Install all tools (go, helm, task, act, hadolint, pre-commit)
-task build                # go build ./...
-task test                 # go test ./... -v
-task fmt                  # go fmt ./...
-task vet                  # go vet ./...
-task docker-build         # Build container image
-task e2e TAG=ci-test      # E2E tests (requires k3s + KUBECONFIG)
-task hooks:install        # Install pre-commit hooks
-task act:pr               # Simulate PR workflow locally with act
-task act:main             # Simulate main workflow locally
-task act:tag TAG=v1.2.3   # Simulate tag workflow locally
+mise install                   # Install all tools (go, helm, task, act, bats, chainsaw, hadolint, pre-commit)
+task build                     # go build ./...
+task test                      # go test ./... -v
+task fmt                       # go fmt ./...
+task vet                       # go vet ./...
+task docker-build              # Build container image
+task e2e TAG=ci-test           # Run all E2E tests: BATS + Chainsaw (requires k3s + KUBECONFIG)
+task e2e:bats TAG=ci-test      # Run BATS E2E tests only
+task e2e:chainsaw TAG=ci-test  # Run Chainsaw E2E tests only
+task hooks:install             # Install pre-commit hooks
+task act:pr                    # Simulate PR workflow locally with act
+task act:main                  # Simulate main workflow locally
+task act:tag TAG=v1.2.3        # Simulate tag workflow locally
 ```
 
 Run a single test:
 ```bash
-go test ./internal/controller/... -run TestSanitizeHostname -v
+go test ./internal/controller/... -run TestGatusEndpointReconciler_DefaultCondition -v
 ```
 
 Pre-commit hooks run `go vet`, `go build`, `go test`, `hadolint`, and `helm lint` automatically on commit.
 
 ## Architecture
 
-**Data flow**: Ingress/HTTPRoute → `GatusEndpoint` CR → aggregated into ConfigMap (`gatus-config/endpoints.yaml`) → Gatus reads config.
+**Data flow**: `GatusEndpoint` CR → aggregated into ConfigMap (`gatus-config/endpoints.yaml`) → Gatus reads config.
 
 **Reconcilers** (registered in `cmd/main.go`):
-- `IngressReconciler` — watches Ingresses, creates/updates/deletes `GatusEndpoint` CRs
-- `HTTPRouteReconciler` — opt-in Gateway API support (`GATEWAY_API_ENABLED=true`)
-- `GatusEndpointReconciler` — aggregates all `GatusEndpoint` CRs into ConfigMap
+- `GatusEndpointReconciler` — aggregates all `GatusEndpoint` CRs into ConfigMap; injects default condition `[STATUS] == 200` when `spec.conditions` is empty
 - `GatusExternalEndpointReconciler` — handles externally-pushed status endpoints
 - `GatusAlertReconciler` — validates alert provider configs, aggregates into ConfigMap
 - `GatusAnnouncementReconciler` — aggregates status page announcements
@@ -50,23 +50,18 @@ Pre-commit hooks run `go vet`, `go build`, `go test`, `hadolint`, and `helm lint
 
 ## Key Conventions
 
-- **Annotations** on Ingress/HTTPRoute: `gatus.io/enabled`, `gatus.io/group`, `gatus.io/alerts`
-- **Labels** on managed resources: `gatus.io/managed-by: gatus-ingress-controller`, `gatus.io/ingress: <name>`
-- **Hostname sanitization**: dots→dashes, `*`→`wildcard` (e.g. `my-ingress-wildcard-example-com`)
 - **Error handling**: wrap with `fmt.Errorf("failed to X: %w", err)`
 - **Logging**: use `log.FromContext(ctx)`, never initialize loggers in reconcilers
-- **Tests**: use `fake.Client` (no envtest), each test file has `newTestScheme(t)` helper
-- **Manual CR override**: a GatusEndpoint without `gatus.io/managed-by` label takes priority over auto-generated ones
+- **Tests**: use `fake.Client` (no envtest), shared `newTestScheme(t)` helper in `helpers_test.go`
+- **Default conditions**: when `GatusEndpoint.spec.conditions` is empty, the reconciler injects `[STATUS] == 200` in the generated YAML (CR is not modified)
+- **Deduplication**: when two `GatusEndpoint` CRs share the same `spec.name`, the one without `ownerReferences` (user-managed) wins
 
 ## Runtime Env Vars
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `INGRESS_CLASS` | `traefik` | Only reconcile Ingresses with this class |
 | `TARGET_NAMESPACE` | `gatus` | Namespace where ConfigMap is written |
 | `CONFIG_MAP_NAME` | `gatus-config` | Target ConfigMap name |
-| `GATEWAY_API_ENABLED` | `false` | Enable HTTPRoute controller |
-| `GATEWAY_NAMES` | _(all)_ | Filter HTTPRoutes by parent gateway names |
 
 ## Docker
 

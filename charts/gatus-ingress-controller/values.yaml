@@ -17,9 +17,6 @@ serviceAccount:
   create: true
   name: ""
 
-# Ingress controller configuration
-ingressClass: traefik
-
 # Namespace where the Gatus ConfigMap will be written
 targetNamespace: gatus
 
@@ -29,15 +26,14 @@ targetNamespace: gatus
 # Set this to match the ConfigMap name used by your Gatus Helm release.
 configMapName: gatus-config
 
-# Gateway API (HTTPRoute) support.
-# Set enabled: true only when the Gateway API CRDs are installed in the cluster.
-gatewayApi:
-  # Whether to enable the HTTPRoute controller. Disabled by default because
-  # the Gateway API CRDs are not part of standard Kubernetes.
-  enabled: false
-  # Comma-separated list of Gateway names whose HTTPRoutes should be watched.
-  # Leave empty to watch HTTPRoutes referencing any Gateway.
-  gatewayNames: ""
+# Name of the Secret where sensitive outputs (alerting.yaml, endpoints.yaml,
+# external-endpoints.yaml) will be written. Must already exist in targetNamespace.
+secretName: gatus-secrets
+
+# Webhook configuration for validating admission of GatusAlertingConfig resources.
+# Requires cert-manager to be installed in the cluster when enabled.
+webhook:
+  enabled: true
 
 resources: {}
 

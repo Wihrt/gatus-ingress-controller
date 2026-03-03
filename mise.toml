@@ -1,5 +1,6 @@
 [tools]
 act = "latest"
+"aqua:kyverno/chainsaw" = "latest"
 go = "latest"
 hadolint = "latest"
 helm = "latest"

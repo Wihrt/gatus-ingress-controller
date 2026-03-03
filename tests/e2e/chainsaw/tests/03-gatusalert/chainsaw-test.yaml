@@ -1,0 +1,70 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: gatusalert
+spec:
+  concurrent: false
+  steps:
+    # ── Step 1: Configured=True when matching GatusAlertingConfig exists ──────
+    - name: "[GatusAlert] Configured=True when matching GatusAlertingConfig exists"
+      try:
+        # Ensure the prerequisite GatusAlertingConfig exists in this test namespace
+        - apply:
+            resource:
+              apiVersion: monitoring.gatus.io/v1alpha1
+              kind: GatusAlertingConfig
+              metadata:
+                name: slack-config
+              spec:
+                type: slack
+                config:
+                  webhook-url: "https://hooks.slack.com/services/test/test/test"
+        - apply:
+            resource:
+              apiVersion: monitoring.gatus.io/v1alpha1
+              kind: GatusAlert
+              metadata:
+                name: test-slack-alert
+              spec:
+                alertingConfigRef: slack-config
+                failureThreshold: 5
+                successThreshold: 2
+                sendOnResolved: true
+                description: "E2E test alert"
+        - assert:
+            resource:
+              apiVersion: monitoring.gatus.io/v1alpha1
+              kind: GatusAlert
+              metadata:
+                name: test-slack-alert
+              status:
+                conditions:
+                  - type: Configured
+                    status: "True"
+      catch:
+        - describe:
+            apiVersion: monitoring.gatus.io/v1alpha1
+            kind: GatusAlert
+            name: test-slack-alert
+        - describe:
+            apiVersion: monitoring.gatus.io/v1alpha1
+            kind: GatusAlertingConfig
+            name: slack-config
+
+    # ── Step 2: Webhook rejects GatusAlert with non-existent alertingConfigRef ─
+    - name: "[GatusAlert] Webhook rejects GatusAlert with non-existent alertingConfigRef"
+      try:
+        - error:
+            resource:
+              apiVersion: monitoring.gatus.io/v1alpha1
+              kind: GatusAlert
+              metadata:
+                name: nonexistent-ref-alert
+              spec:
+                alertingConfigRef: nonexistent-config
+                failureThreshold: 3
+      catch:
+        - describe:
+            apiVersion: monitoring.gatus.io/v1alpha1
+            kind: GatusAlert
+            name: nonexistent-ref-alert
