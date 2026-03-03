@@ -8,8 +8,11 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: ["configmaps"]
+    verbs: ["list", "watch"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
     resourceNames: ["{{ .Values.configMapName }}"]
-    verbs: ["get", "list", "update", "patch"]
+    verbs: ["get", "update", "patch"]
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["list", "watch"]

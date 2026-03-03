@@ -6,11 +6,8 @@ metadata:
     {{- include "gatus-ingress-controller.labels" . | nindent 4 }}
 rules:
   - apiGroups: ["monitoring.gatus.io"]
-    resources: ["gatusalerts", "gatusendpoints", "gatusexternalendpoints", "gatusannouncements", "gatusmaintenances", "gatusalertingconfigs"]
+    resources: ["gatusalerts", "gatusendpoints", "gatusexternalendpoints", "gatusannouncements", "gatusalertingconfigs"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["monitoring.gatus.io"]
-    resources: ["gatusalerts/status", "gatusendpoints/status", "gatusexternalendpoints/status", "gatusannouncements/status", "gatusmaintenances/status", "gatusalertingconfigs/status"]
+    resources: ["gatusalerts/status", "gatusendpoints/status", "gatusexternalendpoints/status", "gatusannouncements/status", "gatusalertingconfigs/status"]
     verbs: ["get", "update", "patch"]
-  - apiGroups: [""]
-    resources: ["configmaps"]
-    verbs: ["list", "watch"]

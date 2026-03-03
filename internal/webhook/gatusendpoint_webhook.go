@@ -27,6 +27,7 @@ var (
 		"CERTIFICATE_EXPIRATION",
 		"DOMAIN_EXPIRATION",
 		"DNS_RCODE",
+		"CONTEXT",
 	}
 
 	// placeholderRegex matches any [PLACEHOLDER] token in a condition string.
@@ -101,11 +102,18 @@ func validateCondition(s string, fld *field.Path) *field.Error {
 		}
 	}
 
-	// Validate function usage: len() and has() only work with [BODY].
+	// Validate function usage: len() and has() require a valid placeholder as argument.
 	for _, match := range lenHasFuncRegex.FindAllStringSubmatch(s, -1) {
 		arg := strings.TrimSpace(match[1])
-		if !strings.HasPrefix(arg, "[BODY]") {
-			return field.Invalid(fld, s, "len() and has() functions can only be used with the [BODY] placeholder")
+		hasValidPlaceholder := false
+		for _, p := range validPlaceholders {
+			if strings.HasPrefix(arg, "["+p+"]") {
+				hasValidPlaceholder = true
+				break
+			}
+		}
+		if !hasValidPlaceholder {
+			return field.Invalid(fld, s, "len() and has() functions require a valid placeholder as argument (e.g. [BODY], [STATUS])")
 		}
 	}
 

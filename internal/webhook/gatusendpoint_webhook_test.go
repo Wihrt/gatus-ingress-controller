@@ -123,25 +123,60 @@ func TestEndpointWebhook_ValidateDelete(t *testing.T) {
 
 func TestValidateCondition_LenWithNonBody(t *testing.T) {
 	fld := field.NewPath("spec").Child("conditions").Index(0)
+	// len() works with any valid placeholder per Gatus source.
 	err := validateCondition("len([STATUS]) < 5", fld)
-	if err == nil {
-		t.Error("expected len() with non-BODY placeholder to be rejected")
+	if err != nil {
+		t.Errorf("expected len() with valid placeholder to be accepted, got: %v", err)
 	}
 }
 
 func TestValidateCondition_LenWithNonBodyInCompoundExpression(t *testing.T) {
 	fld := field.NewPath("spec").Child("conditions").Index(0)
+	// len() works with any valid placeholder per Gatus source.
 	err := validateCondition("[STATUS] == 200 && len([STATUS]) < 5", fld)
-	if err == nil {
-		t.Error("expected len() with non-BODY placeholder in compound expression to be rejected")
+	if err != nil {
+		t.Errorf("expected len() with valid placeholder in compound expression to be accepted, got: %v", err)
 	}
 }
 
 func TestValidateCondition_HasWithNonBodyInCompoundExpression(t *testing.T) {
 	fld := field.NewPath("spec").Child("conditions").Index(0)
+	// has() works with any valid placeholder per Gatus source.
 	err := validateCondition("[STATUS] == 200 && has([STATUS])", fld)
+	if err != nil {
+		t.Errorf("expected has() with valid placeholder in compound expression to be accepted, got: %v", err)
+	}
+}
+
+func TestValidateCondition_LenWithInvalidPlaceholder(t *testing.T) {
+	fld := field.NewPath("spec").Child("conditions").Index(0)
+	err := validateCondition("len([FOOBAR]) < 5", fld)
 	if err == nil {
-		t.Error("expected has() with non-BODY placeholder in compound expression to be rejected")
+		t.Error("expected len() with unknown placeholder to be rejected")
+	}
+}
+
+func TestValidateCondition_HasWithInvalidPlaceholder(t *testing.T) {
+	fld := field.NewPath("spec").Child("conditions").Index(0)
+	err := validateCondition("has([FOOBAR]) == true", fld)
+	if err == nil {
+		t.Error("expected has() with unknown placeholder to be rejected")
+	}
+}
+
+func TestValidateCondition_ContextPlaceholder(t *testing.T) {
+	fld := field.NewPath("spec").Child("conditions").Index(0)
+	err := validateCondition("[CONTEXT].user_id == 123", fld)
+	if err != nil {
+		t.Errorf("expected [CONTEXT] placeholder to be accepted, got: %v", err)
+	}
+}
+
+func TestValidateCondition_LenWithContext(t *testing.T) {
+	fld := field.NewPath("spec").Child("conditions").Index(0)
+	err := validateCondition("len([CONTEXT].items) > 0", fld)
+	if err != nil {
+		t.Errorf("expected len() with [CONTEXT] placeholder to be accepted, got: %v", err)
 	}
 }
 func TestEndpointWebhook_RejectsMixedValidAndUnknownPlaceholder(t *testing.T) {

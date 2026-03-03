@@ -23,7 +23,6 @@ echo "    Target namespace: ${TARGET_NAMESPACE}"
 kubectl create namespace "${TARGET_NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -
 kubectl create configmap gatus-config -n "${TARGET_NAMESPACE}" \
   --from-literal=announcements.yaml="# placeholder" \
-  --from-literal=maintenance.yaml="# placeholder" \
   --dry-run=client -o yaml | kubectl apply -f -
 kubectl create secret generic gatus-secrets -n "${TARGET_NAMESPACE}" \
   --from-literal=endpoints.yaml="placeholder" \
@@ -65,7 +64,6 @@ kubectl wait --for=condition=Established --timeout="${TIMEOUT}" crd/gatusalertin
 kubectl wait --for=condition=Established --timeout="${TIMEOUT}" crd/gatusendpoints.monitoring.gatus.io
 kubectl wait --for=condition=Established --timeout="${TIMEOUT}" crd/gatusexternalendpoints.monitoring.gatus.io
 kubectl wait --for=condition=Established --timeout="${TIMEOUT}" crd/gatusannouncements.monitoring.gatus.io
-kubectl wait --for=condition=Established --timeout="${TIMEOUT}" crd/gatusmaintenances.monitoring.gatus.io
 
 # ── 5. Wait for controller to be ready ────────────────────────────────────────
 echo "==> Waiting for controller to be ready..."

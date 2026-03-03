@@ -40,11 +40,10 @@ Pre-commit hooks run `go vet`, `go build`, `go test`, `hadolint`, and `helm lint
 - `GatusAlertingConfigReconciler` — validates alerting config, merges `configSecretRef`, aggregates into Secret
 - `GatusAlertReconciler` — validates alert provider configs (via `alertingConfigRef`), aggregates into Secret
 - `GatusAnnouncementReconciler` — aggregates status page announcements into ConfigMap
-- `GatusMaintenanceReconciler` — aggregates global maintenance windows into ConfigMap
 
-**CRDs** (`api/v1alpha1/`): GatusEndpoint, GatusAlert, GatusAlertingConfig, GatusExternalEndpoint, GatusAnnouncement, GatusMaintenance.
+**CRDs** (`api/v1alpha1/`): GatusEndpoint, GatusAlert, GatusAlertingConfig, GatusExternalEndpoint, GatusAnnouncement.
 
-**ConfigMap keys** managed by the controller: `announcements.yaml`, `maintenance.yaml`. User-managed `config.yaml` is preserved.
+**ConfigMap keys** managed by the controller: `announcements.yaml`. User-managed `config.yaml` is preserved.
 **Secret keys** managed by the controller: `endpoints.yaml`, `external-endpoints.yaml`, `alerting.yaml`.
 
 ## Key Conventions

@@ -256,3 +256,96 @@ func TestGatusAlertReconciler_TransientErrorRequeues(t *testing.T) {
 		t.Fatal("expected error to be returned for transient Get failure, got nil")
 	}
 }
+
+// TestGatusAlertReconciler_UpdateReflected verifies that when a GatusAlert's
+// alertingConfigRef is changed, the status condition is updated after reconciliation.
+func TestGatusAlertReconciler_UpdateReflected(t *testing.T) {
+	ctx := context.Background()
+	s := newTestScheme(t)
+	alert := &monitoringv1alpha1.GatusAlert{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-slack", Namespace: "default"},
+		Spec:       monitoringv1alpha1.GatusAlertSpec{AlertingConfigRef: "slack-cfg"},
+	}
+	slackCfg := &monitoringv1alpha1.GatusAlertingConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "slack-cfg", Namespace: "default"},
+		Spec:       monitoringv1alpha1.GatusAlertingConfigSpec{Type: "slack"},
+		Status: monitoringv1alpha1.GatusAlertingConfigStatus{
+			Conditions: []metav1.Condition{{
+				Type:               "Valid",
+				Status:             metav1.ConditionTrue,
+				Reason:             "ConfigValid",
+				Message:            "All required fields are present",
+				LastTransitionTime: metav1.Now(),
+			}},
+		},
+	}
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(s).
+		WithObjects(alert, slackCfg).
+		WithStatusSubresource(&monitoringv1alpha1.GatusAlert{}, &monitoringv1alpha1.GatusAlertingConfig{}).
+		Build()
+
+	// Pre-set the status on slackCfg.
+	if err := fakeClient.Status().Update(ctx, slackCfg); err != nil {
+		t.Fatalf("failed to set status: %v", err)
+	}
+
+	r := newAlertReconciler(fakeClient)
+	reconcileAlert(t, r, "my-slack", "default")
+
+	cond := getAlertCondition(t, fakeClient, "my-slack", "default", "Configured")
+	if cond == nil || cond.Status != metav1.ConditionTrue {
+		t.Fatal("expected Configured=True initially")
+	}
+
+	// Update alertingConfigRef to a non-existent config
+	if err := fakeClient.Get(ctx, types.NamespacedName{Name: "my-slack", Namespace: "default"}, alert); err != nil {
+		t.Fatalf("failed to re-fetch alert: %v", err)
+	}
+	alert.Spec.AlertingConfigRef = "does-not-exist"
+	if err := fakeClient.Update(ctx, alert); err != nil {
+		t.Fatalf("failed to update alert: %v", err)
+	}
+
+	reconcileAlert(t, r, "my-slack", "default")
+
+	cond = getAlertCondition(t, fakeClient, "my-slack", "default", "Configured")
+	if cond == nil {
+		t.Fatal("expected Configured condition after update")
+	}
+	if cond.Status != metav1.ConditionFalse {
+		t.Errorf("expected Configured=False after updating to non-existent ref, got %v", cond.Status)
+	}
+}
+
+// TestGatusAlertReconciler_DeletedAlertHandledGracefully verifies that deleting a
+// GatusAlert and then reconciling it is handled gracefully (no error).
+func TestGatusAlertReconciler_DeletedAlertHandledGracefully(t *testing.T) {
+	ctx := context.Background()
+	s := newTestScheme(t)
+	alert := &monitoringv1alpha1.GatusAlert{
+		ObjectMeta: metav1.ObjectMeta{Name: "to-delete", Namespace: "default"},
+		Spec:       monitoringv1alpha1.GatusAlertSpec{AlertingConfigRef: "slack-cfg"},
+	}
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(s).
+		WithObjects(alert).
+		WithStatusSubresource(&monitoringv1alpha1.GatusAlert{}).
+		Build()
+
+	r := newAlertReconciler(fakeClient)
+	reconcileAlert(t, r, "to-delete", "default")
+
+	// Delete the alert
+	if err := fakeClient.Delete(ctx, alert); err != nil {
+		t.Fatalf("failed to delete alert: %v", err)
+	}
+
+	// Reconcile again (triggered by delete event) — should not error.
+	_, err := r.Reconcile(ctx, ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "to-delete", Namespace: "default"},
+	})
+	if err != nil {
+		t.Fatalf("expected no error after deleting alert, got: %v", err)
+	}
+}

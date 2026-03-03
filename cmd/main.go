@@ -73,6 +73,12 @@ func main() {
 						controllerNamespace: {},
 					},
 				},
+				// Restrict ConfigMap caching to the target namespace only.
+				&corev1.ConfigMap{}: {
+					Namespaces: map[string]cache.Config{
+						targetNamespace: {},
+					},
+				},
 			},
 		},
 	})
@@ -104,15 +110,6 @@ func main() {
 		ConfigMapName:   configMapName,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "GatusAnnouncement")
-		os.Exit(1)
-	}
-
-	if err = (&controller.GatusMaintenanceReconciler{
-		Client:          mgr.GetClient(),
-		TargetNamespace: targetNamespace,
-		ConfigMapName:   configMapName,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "GatusMaintenance")
 		os.Exit(1)
 	}
 

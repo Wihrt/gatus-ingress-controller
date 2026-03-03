@@ -10,15 +10,13 @@ A Kubernetes controller that manages [Gatus](https://github.com/TwiN/gatus) moni
 ```
 ConfigMap "gatus-config"                Secret "gatus-secrets"
   ├── config.yaml   (user-managed)        ├── endpoints.yaml           (GatusEndpointReconciler)
-  ├── announcements.yaml                  ├── external-endpoints.yaml  (GatusExternalEndpointReconciler)
-  │     (GatusAnnouncementReconciler)     └── alerting.yaml            (GatusAlertingConfigReconciler
-  └── maintenance.yaml                                                  + GatusAlertReconciler)
-        (GatusMaintenanceReconciler)
-          │
+  └── announcements.yaml                  ├── external-endpoints.yaml  (GatusExternalEndpointReconciler)
+        (GatusAnnouncementReconciler)     └── alerting.yaml            (GatusAlertingConfigReconciler
+          │                                                              + GatusAlertReconciler)
           └── mounted in Gatus pod → Gatus merges all files
 ```
 
-Each reconciler watches its own CRD cluster-wide, builds the corresponding Gatus config section, and writes it as a dedicated key inside the shared ConfigMap or Secret. Non-sensitive data (announcements, maintenance) goes into the ConfigMap; sensitive data (endpoints, alerting) goes into the Secret. Both must be pre-created — the controller never creates or deletes them.
+Each reconciler watches its own CRD cluster-wide, builds the corresponding Gatus config section, and writes it as a dedicated key inside the shared ConfigMap or Secret. Non-sensitive data (announcements) goes into the ConfigMap; sensitive data (endpoints, alerting) goes into the Secret. Both must be pre-created — the controller never creates or deletes them.
 
 ## Installation
 
@@ -159,26 +157,6 @@ spec:
   type: warning          # outage | warning | information | operational | none
   message: "Scheduled database maintenance window tonight from 22:00 to 23:00 UTC."
   archived: false        # true moves it to the "Past Announcements" section
-```
-
-### Define a global maintenance window (GatusMaintenance)
-
-Gatus suppresses all alerts during the configured maintenance window. Only **one** `GatusMaintenance` CR is active at a time (the first alphabetically); extras are ignored with a warning.
-
-```yaml
-apiVersion: monitoring.gatus.io/v1alpha1
-kind: GatusMaintenance
-metadata:
-  name: nightly-maintenance
-  namespace: default
-spec:
-  enabled: true
-  start: "23:00"                # HH:MM (24-hour)
-  duration: "1h"
-  timezone: "Europe/Amsterdam"
-  every:                        # omit to apply every day
-    - Monday
-    - Thursday
 ```
 
 ### Create a monitoring endpoint manually (GatusEndpoint)
