@@ -12,5 +12,5 @@ rules:
     resources: ["gatusalerts/status", "gatusendpoints/status", "gatusexternalendpoints/status", "gatusannouncements/status", "gatusmaintenances/status", "gatusalertingconfigs/status"]
     verbs: ["get", "update", "patch"]
   - apiGroups: [""]
-    resources: ["secrets", "configmaps"]
+    resources: ["configmaps"]
     verbs: ["list", "watch"]
