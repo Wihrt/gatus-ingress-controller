@@ -128,3 +128,13 @@ func TestValidateCondition_LenWithNonBody(t *testing.T) {
 		t.Error("expected len() with non-BODY placeholder to be rejected")
 	}
 }
+
+func TestEndpointWebhook_RejectsMixedValidAndUnknownPlaceholder(t *testing.T) {
+	v := &GatusEndpointValidator{}
+	// [STATUS] is valid but [FOO] is not; the condition should be rejected.
+	ep := makeEndpoint([]string{"[STATUS] == 200 && [FOO] != 0"})
+	_, err := v.ValidateCreate(context.Background(), ep)
+	if err == nil {
+		t.Error("expected condition with unknown placeholder [FOO] to be rejected even when a valid placeholder is also present")
+	}
+}
