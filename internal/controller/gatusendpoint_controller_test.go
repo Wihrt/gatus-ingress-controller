@@ -203,7 +203,7 @@ func TestGatusEndpointReconciler_ResolvesAlertRef(t *testing.T) {
 
 	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "gatus-secrets", Namespace: "gatus"}}
 	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(secret, alert, alertingCfg, ep).Build()
-	r := &GatusEndpointReconciler{Client: fakeClient, Scheme: s, TargetNamespace: "gatus", SecretName:      "gatus-secrets"}
+	r := &GatusEndpointReconciler{Client: fakeClient, Scheme: s, TargetNamespace: "gatus", SecretName: "gatus-secrets"}
 
 	_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "my-ep", Namespace: "default"}})
 	if err != nil {
@@ -267,7 +267,7 @@ func TestGatusEndpointReconciler_AlertRefOverrides(t *testing.T) {
 
 	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "gatus-secrets", Namespace: "gatus"}}
 	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(secret, alert, pagerdutyAlertingCfg, ep).Build()
-	r := &GatusEndpointReconciler{Client: fakeClient, Scheme: s, TargetNamespace: "gatus", SecretName:      "gatus-secrets"}
+	r := &GatusEndpointReconciler{Client: fakeClient, Scheme: s, TargetNamespace: "gatus", SecretName: "gatus-secrets"}
 
 	_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "override-ep", Namespace: "default"}})
 	if err != nil {
@@ -327,7 +327,7 @@ func TestGatusEndpointReconciler_WithClientConfig(t *testing.T) {
 
 	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "gatus-secrets", Namespace: "gatus"}}
 	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(secret, ep).Build()
-	r := &GatusEndpointReconciler{Client: fakeClient, Scheme: s, TargetNamespace: "gatus", SecretName:      "gatus-secrets"}
+	r := &GatusEndpointReconciler{Client: fakeClient, Scheme: s, TargetNamespace: "gatus", SecretName: "gatus-secrets"}
 
 	_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "client-ep", Namespace: "default"}})
 	if err != nil {
@@ -339,13 +339,13 @@ func TestGatusEndpointReconciler_WithClientConfig(t *testing.T) {
 	y := string(updatedSecret4.Data["endpoints.yaml"])
 
 	checks := map[string]string{
-		"insecure: true":                          "insecure flag",
-		"timeout: 10s":                            "timeout",
-		"token-url: https://auth.example.com":     "OAuth2 token-url",
-		"client-id: my-client-id":                 "OAuth2 client-id",
-		"client-secret: my-secret":                "OAuth2 client-secret",
-		"certificate-file: /certs/tls.crt":        "TLS certificate-file",
-		"private-key-file: /certs/tls.key":        "TLS private-key-file",
+		"insecure: true":                      "insecure flag",
+		"timeout: 10s":                        "timeout",
+		"token-url: https://auth.example.com": "OAuth2 token-url",
+		"client-id: my-client-id":             "OAuth2 client-id",
+		"client-secret: my-secret":            "OAuth2 client-secret",
+		"certificate-file: /certs/tls.crt":    "TLS certificate-file",
+		"private-key-file: /certs/tls.key":    "TLS private-key-file",
 	}
 	for substr, label := range checks {
 		if !contains(y, substr) {

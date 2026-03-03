@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -52,8 +52,8 @@ func TestWebhook_AllowsValidDiscordConfig(t *testing.T) {
 func TestWebhook_RejectsUnknownField(t *testing.T) {
 	v := &GatusAlertingConfigValidator{}
 	cfg := makeConfig("discord", map[string]interface{}{
-		"webhook-url":   "https://discord.com/api/webhooks/xxx",
-		"not-a-field":   "garbage",
+		"webhook-url": "https://discord.com/api/webhooks/xxx",
+		"not-a-field": "garbage",
 	}, nil)
 	_, err := v.ValidateCreate(context.Background(), cfg)
 	if err == nil {
@@ -126,66 +126,66 @@ func TestWebhook_ValidateDelete_AlwaysAllowed(t *testing.T) {
 }
 
 func TestWebhook_RejectsSecondConfigOfSameType(t *testing.T) {
-s := newConfigWebhookScheme(t)
-existing := &monitoringv1alpha1.GatusAlertingConfig{
-ObjectMeta: metav1.ObjectMeta{Name: "existing-slack", Namespace: "default"},
-Spec:       monitoringv1alpha1.GatusAlertingConfigSpec{Type: "slack"},
-}
-fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(existing).Build()
-v := &GatusAlertingConfigValidator{Client: fakeClient}
+	s := newConfigWebhookScheme(t)
+	existing := &monitoringv1alpha1.GatusAlertingConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "existing-slack", Namespace: "default"},
+		Spec:       monitoringv1alpha1.GatusAlertingConfigSpec{Type: "slack"},
+	}
+	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(existing).Build()
+	v := &GatusAlertingConfigValidator{Client: fakeClient}
 
-newCfg := &monitoringv1alpha1.GatusAlertingConfig{
-ObjectMeta: metav1.ObjectMeta{Name: "new-slack", Namespace: "other"},
-Spec:       monitoringv1alpha1.GatusAlertingConfigSpec{Type: "slack"},
-}
-_, err := v.ValidateCreate(context.Background(), newCfg)
-if err == nil {
-t.Error("expected rejection when a second slack config is created")
-}
+	newCfg := &monitoringv1alpha1.GatusAlertingConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "new-slack", Namespace: "other"},
+		Spec:       monitoringv1alpha1.GatusAlertingConfigSpec{Type: "slack"},
+	}
+	_, err := v.ValidateCreate(context.Background(), newCfg)
+	if err == nil {
+		t.Error("expected rejection when a second slack config is created")
+	}
 }
 
 func TestWebhook_AllowsUpdateOfExistingConfig(t *testing.T) {
-s := newConfigWebhookScheme(t)
-existing := &monitoringv1alpha1.GatusAlertingConfig{
-ObjectMeta: metav1.ObjectMeta{Name: "slack-cfg", Namespace: "default"},
-Spec: monitoringv1alpha1.GatusAlertingConfigSpec{
-Type: "slack",
-Config: map[string]apiextv1.JSON{
-"webhook-url": {Raw: func() []byte { b, _ := json.Marshal("https://hooks.slack.com/old"); return b }()},
-},
-},
-}
-fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(existing).Build()
-v := &GatusAlertingConfigValidator{Client: fakeClient}
+	s := newConfigWebhookScheme(t)
+	existing := &monitoringv1alpha1.GatusAlertingConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "slack-cfg", Namespace: "default"},
+		Spec: monitoringv1alpha1.GatusAlertingConfigSpec{
+			Type: "slack",
+			Config: map[string]apiextv1.JSON{
+				"webhook-url": {Raw: func() []byte { b, _ := json.Marshal("https://hooks.slack.com/old"); return b }()},
+			},
+		},
+	}
+	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(existing).Build()
+	v := &GatusAlertingConfigValidator{Client: fakeClient}
 
-updated := existing.DeepCopy()
-updated.Spec.Config["webhook-url"] = apiextv1.JSON{Raw: func() []byte { b, _ := json.Marshal("https://hooks.slack.com/new"); return b }()}
-_, err := v.ValidateUpdate(context.Background(), existing, updated)
-if err != nil {
-t.Errorf("expected updating existing slack config to be allowed, got: %v", err)
-}
+	updated := existing.DeepCopy()
+	updated.Spec.Config["webhook-url"] = apiextv1.JSON{Raw: func() []byte { b, _ := json.Marshal("https://hooks.slack.com/new"); return b }()}
+	_, err := v.ValidateUpdate(context.Background(), existing, updated)
+	if err != nil {
+		t.Errorf("expected updating existing slack config to be allowed, got: %v", err)
+	}
 }
 
 func TestWebhook_AllowsCreateOfDifferentType(t *testing.T) {
-s := newConfigWebhookScheme(t)
-existing := &monitoringv1alpha1.GatusAlertingConfig{
-ObjectMeta: metav1.ObjectMeta{Name: "slack-cfg", Namespace: "default"},
-Spec:       monitoringv1alpha1.GatusAlertingConfigSpec{Type: "slack"},
-}
-fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(existing).Build()
-v := &GatusAlertingConfigValidator{Client: fakeClient}
+	s := newConfigWebhookScheme(t)
+	existing := &monitoringv1alpha1.GatusAlertingConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "slack-cfg", Namespace: "default"},
+		Spec:       monitoringv1alpha1.GatusAlertingConfigSpec{Type: "slack"},
+	}
+	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(existing).Build()
+	v := &GatusAlertingConfigValidator{Client: fakeClient}
 
-discordCfg := &monitoringv1alpha1.GatusAlertingConfig{
-ObjectMeta: metav1.ObjectMeta{Name: "discord-cfg", Namespace: "default"},
-Spec: monitoringv1alpha1.GatusAlertingConfigSpec{
-Type: "discord",
-Config: map[string]apiextv1.JSON{
-"webhook-url": {Raw: func() []byte { b, _ := json.Marshal("https://discord.com/webhooks/xxx"); return b }()},
-},
-},
-}
-_, err := v.ValidateCreate(context.Background(), discordCfg)
-if err != nil {
-t.Errorf("expected creating a discord config when slack exists to be allowed, got: %v", err)
-}
+	discordCfg := &monitoringv1alpha1.GatusAlertingConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "discord-cfg", Namespace: "default"},
+		Spec: monitoringv1alpha1.GatusAlertingConfigSpec{
+			Type: "discord",
+			Config: map[string]apiextv1.JSON{
+				"webhook-url": {Raw: func() []byte { b, _ := json.Marshal("https://discord.com/webhooks/xxx"); return b }()},
+			},
+		},
+	}
+	_, err := v.ValidateCreate(context.Background(), discordCfg)
+	if err != nil {
+		t.Errorf("expected creating a discord config when slack exists to be allowed, got: %v", err)
+	}
 }

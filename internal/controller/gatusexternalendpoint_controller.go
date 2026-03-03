@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 
+	"gopkg.in/yaml.v3"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"gopkg.in/yaml.v3"
 
 	monitoringv1alpha1 "github.com/Wihrt/gatus-ingress-controller/api/v1alpha1"
 )
@@ -30,11 +30,11 @@ type gatusExternalConfigFile struct {
 }
 
 type gatusExternalEndpointYAML struct {
-	Name      string           `yaml:"name"`
-	Enabled   bool             `yaml:"enabled,omitempty"`
-	Group     string           `yaml:"group,omitempty"`
-	Token     string           `yaml:"token"`
-	Alerts    []gatusAlertYAML `yaml:"alerts,omitempty"`
+	Name      string              `yaml:"name"`
+	Enabled   bool                `yaml:"enabled,omitempty"`
+	Group     string              `yaml:"group,omitempty"`
+	Token     string              `yaml:"token"`
+	Alerts    []gatusAlertYAML    `yaml:"alerts,omitempty"`
 	Heartbeat *gatusHeartbeatYAML `yaml:"heartbeat,omitempty"`
 }
 

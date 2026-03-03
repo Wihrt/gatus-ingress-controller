@@ -1,80 +1,80 @@
 package main
 
 import (
-"os"
+	"os"
 
-"k8s.io/apimachinery/pkg/runtime"
-utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-ctrl "sigs.k8s.io/controller-runtime"
-"sigs.k8s.io/controller-runtime/pkg/healthz"
-"sigs.k8s.io/controller-runtime/pkg/log/zap"
-metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	"k8s.io/apimachinery/pkg/runtime"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/healthz"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-monitoringv1alpha1 "github.com/Wihrt/gatus-ingress-controller/api/v1alpha1"
+	monitoringv1alpha1 "github.com/Wihrt/gatus-ingress-controller/api/v1alpha1"
 	"github.com/Wihrt/gatus-ingress-controller/internal/controller"
 	"github.com/Wihrt/gatus-ingress-controller/internal/webhook"
 )
 
 var (
-scheme   = runtime.NewScheme()
-setupLog = ctrl.Log.WithName("setup")
+	scheme   = runtime.NewScheme()
+	setupLog = ctrl.Log.WithName("setup")
 )
 
 func init() {
-utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-utilruntime.Must(monitoringv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+	utilruntime.Must(monitoringv1alpha1.AddToScheme(scheme))
 }
 
 func main() {
-opts := zap.Options{
-Development: true,
-}
-ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+	opts := zap.Options{
+		Development: true,
+	}
+	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
-mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-Scheme: scheme,
-Metrics: metricsserver.Options{
-BindAddress: ":8080",
-},
-HealthProbeBindAddress: ":8081",
-LeaderElection:         false,
-})
-if err != nil {
-setupLog.Error(err, "unable to start manager")
-os.Exit(1)
-}
+	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+		Scheme: scheme,
+		Metrics: metricsserver.Options{
+			BindAddress: ":8080",
+		},
+		HealthProbeBindAddress: ":8081",
+		LeaderElection:         false,
+	})
+	if err != nil {
+		setupLog.Error(err, "unable to start manager")
+		os.Exit(1)
+	}
 
-targetNamespace := os.Getenv("TARGET_NAMESPACE")
-if targetNamespace == "" {
-targetNamespace = "gatus"
-}
+	targetNamespace := os.Getenv("TARGET_NAMESPACE")
+	if targetNamespace == "" {
+		targetNamespace = "gatus"
+	}
 
-configMapName := os.Getenv("CONFIG_MAP_NAME")
-if configMapName == "" {
-configMapName = "gatus-config"
-}
+	configMapName := os.Getenv("CONFIG_MAP_NAME")
+	if configMapName == "" {
+		configMapName = "gatus-config"
+	}
 
-secretName := os.Getenv("SECRET_NAME")
-if secretName == "" {
-	secretName = "gatus-secrets"
-}
+	secretName := os.Getenv("SECRET_NAME")
+	if secretName == "" {
+		secretName = "gatus-secrets"
+	}
 
-controllerNamespace := os.Getenv("POD_NAMESPACE")
-if controllerNamespace == "" {
-	setupLog.Error(nil, "POD_NAMESPACE env var is required (set via Downward API)")
-	os.Exit(1)
-}
+	controllerNamespace := os.Getenv("POD_NAMESPACE")
+	if controllerNamespace == "" {
+		setupLog.Error(nil, "POD_NAMESPACE env var is required (set via Downward API)")
+		os.Exit(1)
+	}
 
-if err = (&controller.GatusAlertingConfigReconciler{
-	Client:              mgr.GetClient(),
-	TargetNamespace:     targetNamespace,
-	SecretName:          secretName,
-	ControllerNamespace: controllerNamespace,
-}).SetupWithManager(mgr); err != nil {
-setupLog.Error(err, "unable to create controller", "controller", "GatusAlertingConfig")
-os.Exit(1)
-}
+	if err = (&controller.GatusAlertingConfigReconciler{
+		Client:              mgr.GetClient(),
+		TargetNamespace:     targetNamespace,
+		SecretName:          secretName,
+		ControllerNamespace: controllerNamespace,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "GatusAlertingConfig")
+		os.Exit(1)
+	}
 
 	if err = (&controller.GatusAlertReconciler{
 		Client: mgr.GetClient(),
@@ -101,26 +101,26 @@ os.Exit(1)
 		os.Exit(1)
 	}
 
-if err = (&controller.GatusEndpointReconciler{
-Client:          mgr.GetClient(),
-Scheme:          mgr.GetScheme(),
-TargetNamespace: targetNamespace,
-SecretName:      secretName,
-}).SetupWithManager(mgr); err != nil {
-setupLog.Error(err, "unable to create controller", "controller", "GatusEndpoint")
-os.Exit(1)
-}
+	if err = (&controller.GatusEndpointReconciler{
+		Client:          mgr.GetClient(),
+		Scheme:          mgr.GetScheme(),
+		TargetNamespace: targetNamespace,
+		SecretName:      secretName,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "GatusEndpoint")
+		os.Exit(1)
+	}
 
-if err = (&controller.GatusExternalEndpointReconciler{
-Client:          mgr.GetClient(),
-TargetNamespace: targetNamespace,
-SecretName:      secretName,
-}).SetupWithManager(mgr); err != nil {
-setupLog.Error(err, "unable to create controller", "controller", "GatusExternalEndpoint")
-os.Exit(1)
-}
+	if err = (&controller.GatusExternalEndpointReconciler{
+		Client:          mgr.GetClient(),
+		TargetNamespace: targetNamespace,
+		SecretName:      secretName,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "GatusExternalEndpoint")
+		os.Exit(1)
+	}
 
-if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
+	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")
 		os.Exit(1)
 	}
@@ -155,7 +155,7 @@ if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
-setupLog.Error(err, "problem running manager")
-os.Exit(1)
-}
+		setupLog.Error(err, "problem running manager")
+		os.Exit(1)
+	}
 }
