@@ -162,3 +162,18 @@ spec:
       catch:
         - script:
             content: kubectl get secret gatus-secrets -n gatus -o jsonpath='{.data.endpoints\.yaml}' | base64 -d
+
+    # ── Step 6: Webhook rejects endpoint with unknown placeholder ────────────
+    - name: "[GatusEndpoint] webhook rejects unknown condition placeholder"
+      try:
+        - error:
+            resource:
+              apiVersion: monitoring.gatus.io/v1alpha1
+              kind: GatusEndpoint
+              metadata:
+                name: invalid-condition-ep
+              spec:
+                name: "invalid-condition"
+                url: "https://invalid.example.com"
+                conditions:
+                  - "[UNKNOWN_PLACEHOLDER] == 200"
