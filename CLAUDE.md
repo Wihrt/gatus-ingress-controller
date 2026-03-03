@@ -18,7 +18,6 @@ task fmt                       # go fmt ./...
 task vet                       # go vet ./...
 task docker-build              # Build container image
 task e2e TAG=ci-test           # Run Chainsaw E2E tests (requires k3s + KUBECONFIG)
-task hooks:install             # Install pre-commit hooks
 task act:pr                    # Simulate PR workflow locally with act
 task act:main                  # Simulate main workflow locally
 task act:tag TAG=v1.2.3        # Simulate tag workflow locally
