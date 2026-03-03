@@ -172,3 +172,118 @@ func TestGatusMaintenanceReconciler_RequeuesWhenConfigMapMissing(t *testing.T) {
 		t.Error("expected RequeueAfter > 0 when ConfigMap is missing")
 	}
 }
+
+// TestGatusMaintenanceReconciler_DeletedMaintenanceRemoved verifies that deleting
+// a GatusMaintenance CR removes it from the ConfigMap after reconciliation.
+func TestGatusMaintenanceReconciler_DeletedMaintenanceRemoved(t *testing.T) {
+	s := newTestScheme(t)
+	m := &monitoringv1alpha1.GatusMaintenance{
+		ObjectMeta: metav1.ObjectMeta{Name: "to-delete", Namespace: "default"},
+		Spec:       monitoringv1alpha1.GatusMaintenanceSpec{Start: "03:00", Duration: "45m"},
+	}
+	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(maintenanceConfigMap(), m).Build()
+	r := newMaintenanceReconciler(fakeClient)
+
+	// Create
+	reconcileMaintenance(t, r, "to-delete", "default")
+	out := getMaintenanceYAML(t, fakeClient)
+	maint, ok := out["maintenance"].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected maintenance block before deletion")
+	}
+	if maint["start"] != "03:00" {
+		t.Fatalf("expected start=03:00, got %v", maint["start"])
+	}
+
+	// Delete
+	if err := fakeClient.Delete(context.Background(), m); err != nil {
+		t.Fatalf("failed to delete maintenance: %v", err)
+	}
+
+	// Reconcile again (triggered by delete)
+	reconcileMaintenance(t, r, "to-delete", "default")
+
+	cm := &corev1.ConfigMap{}
+	_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: "gatus-config", Namespace: "gatus"}, cm)
+	raw := cm.Data["maintenance.yaml"]
+	var out2 map[string]interface{}
+	if err := yaml.Unmarshal([]byte(raw), &out2); err != nil {
+		t.Fatalf("maintenance.yaml is not valid YAML: %v", err)
+	}
+	if m2, exists := out2["maintenance"]; exists && m2 != nil {
+		t.Errorf("expected no maintenance block after delete, got: %v", m2)
+	}
+}
+
+// TestGatusMaintenanceReconciler_UpdateReflected verifies that updating a
+// GatusMaintenance spec is reflected in the ConfigMap after reconciliation.
+func TestGatusMaintenanceReconciler_UpdateReflected(t *testing.T) {
+	s := newTestScheme(t)
+	m := &monitoringv1alpha1.GatusMaintenance{
+		ObjectMeta: metav1.ObjectMeta{Name: "updatable", Namespace: "default"},
+		Spec: monitoringv1alpha1.GatusMaintenanceSpec{
+			Start:    "05:00",
+			Duration: "1h",
+		},
+	}
+	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(maintenanceConfigMap(), m).Build()
+	r := newMaintenanceReconciler(fakeClient)
+
+	reconcileMaintenance(t, r, "updatable", "default")
+
+	// Update
+	m.Spec.Start = "06:00"
+	m.Spec.Duration = "2h"
+	m.Spec.Timezone = "America/New_York"
+	if err := fakeClient.Update(context.Background(), m); err != nil {
+		t.Fatalf("failed to update maintenance: %v", err)
+	}
+
+	reconcileMaintenance(t, r, "updatable", "default")
+
+	out := getMaintenanceYAML(t, fakeClient)
+	maint := out["maintenance"].(map[string]interface{})
+	if maint["start"] != "06:00" {
+		t.Errorf("expected updated start=06:00, got %v", maint["start"])
+	}
+	if maint["duration"] != "2h" {
+		t.Errorf("expected updated duration=2h, got %v", maint["duration"])
+	}
+	if maint["timezone"] != "America/New_York" {
+		t.Errorf("expected updated timezone=America/New_York, got %v", maint["timezone"])
+	}
+}
+
+// TestGatusMaintenanceReconciler_DeleteWinnerPromotesSecond verifies that when the
+// alphabetically first CR is deleted, the second one becomes active.
+func TestGatusMaintenanceReconciler_DeleteWinnerPromotesSecond(t *testing.T) {
+	s := newTestScheme(t)
+	first := &monitoringv1alpha1.GatusMaintenance{
+		ObjectMeta: metav1.ObjectMeta{Name: "aaa-window", Namespace: "default"},
+		Spec:       monitoringv1alpha1.GatusMaintenanceSpec{Start: "01:00", Duration: "30m"},
+	}
+	second := &monitoringv1alpha1.GatusMaintenance{
+		ObjectMeta: metav1.ObjectMeta{Name: "zzz-window", Namespace: "default"},
+		Spec:       monitoringv1alpha1.GatusMaintenanceSpec{Start: "23:00", Duration: "2h"},
+	}
+	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(maintenanceConfigMap(), first, second).Build()
+	r := newMaintenanceReconciler(fakeClient)
+
+	reconcileMaintenance(t, r, "aaa-window", "default")
+	out := getMaintenanceYAML(t, fakeClient)
+	if out["maintenance"].(map[string]interface{})["start"] != "01:00" {
+		t.Fatal("expected aaa-window to win initially")
+	}
+
+	// Delete first
+	if err := fakeClient.Delete(context.Background(), first); err != nil {
+		t.Fatalf("failed to delete first: %v", err)
+	}
+
+	reconcileMaintenance(t, r, "aaa-window", "default")
+	out = getMaintenanceYAML(t, fakeClient)
+	maint := out["maintenance"].(map[string]interface{})
+	if maint["start"] != "23:00" {
+		t.Errorf("expected zzz-window (start=23:00) to become active, got start=%v", maint["start"])
+	}
+}

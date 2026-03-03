@@ -81,43 +81,50 @@ func (r *GatusAlertingConfigReconciler) Reconcile(ctx context.Context, req ctrl.
 	logger.Info("Reconciling GatusAlertingConfig", "name", req.Name, "namespace", req.Namespace)
 
 	// Load the triggering CR to update its status.
+	// If the CR was deleted we still need to re-aggregate.
 	cfg := &monitoringv1alpha1.GatusAlertingConfig{}
+	crFound := true
 	if err := r.Get(ctx, req.NamespacedName, cfg); err != nil {
-		return ctrl.Result{}, client.IgnoreNotFound(err)
-	}
-
-	// Resolve combined config (inline + configSecretRef).
-	merged, requeueResult, err := r.resolveConfig(ctx, cfg)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	if requeueResult != nil {
-		return *requeueResult, nil
-	}
-
-	// Validate required fields against the merged config.
-	missing := validateMergedConfig(cfg.Spec.Type, merged)
-	if len(missing) > 0 {
-		setCondition(&cfg.Status.Conditions, metav1.Condition{
-			Type:    "Valid",
-			Status:  metav1.ConditionFalse,
-			Reason:  "MissingRequiredFields",
-			Message: fmt.Sprintf("missing required fields: %v", missing),
-		})
-		if err := r.Status().Update(ctx, cfg); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to update GatusAlertingConfig status: %w", err)
+		if client.IgnoreNotFound(err) != nil {
+			return ctrl.Result{}, err
 		}
-		return ctrl.Result{}, nil
+		crFound = false
 	}
 
-	setCondition(&cfg.Status.Conditions, metav1.Condition{
-		Type:    "Valid",
-		Status:  metav1.ConditionTrue,
-		Reason:  "ConfigValid",
-		Message: "All required fields are present",
-	})
-	if err := r.Status().Update(ctx, cfg); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to update GatusAlertingConfig status: %w", err)
+	if crFound {
+		// Resolve combined config (inline + configSecretRef).
+		merged, requeueResult, err := r.resolveConfig(ctx, cfg)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if requeueResult != nil {
+			return *requeueResult, nil
+		}
+
+		// Validate required fields against the merged config.
+		missing := validateMergedConfig(cfg.Spec.Type, merged)
+		if len(missing) > 0 {
+			setCondition(&cfg.Status.Conditions, metav1.Condition{
+				Type:    "Valid",
+				Status:  metav1.ConditionFalse,
+				Reason:  "MissingRequiredFields",
+				Message: fmt.Sprintf("missing required fields: %v", missing),
+			})
+			if err := r.Status().Update(ctx, cfg); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to update GatusAlertingConfig status: %w", err)
+			}
+			// Still aggregate to remove this invalid config from the Secret.
+		} else {
+			setCondition(&cfg.Status.Conditions, metav1.Condition{
+				Type:    "Valid",
+				Status:  metav1.ConditionTrue,
+				Reason:  "ConfigValid",
+				Message: "All required fields are present",
+			})
+			if err := r.Status().Update(ctx, cfg); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to update GatusAlertingConfig status: %w", err)
+			}
+		}
 	}
 
 	// Aggregate all valid GatusAlertingConfig CRs.
@@ -134,6 +141,7 @@ func (r *GatusAlertingConfigReconciler) Reconcile(ctx context.Context, req ctrl.
 	})
 
 	providers := make(map[string]interface{})
+	var providerTypes []string
 	for i := range cfgList.Items {
 		item := &cfgList.Items[i]
 		t := item.Spec.Type
@@ -152,10 +160,32 @@ func (r *GatusAlertingConfigReconciler) Reconcile(ctx context.Context, req ctrl.
 			continue // skip invalid or unresolvable configs
 		}
 		providers[t] = itemMerged
+		providerTypes = append(providerTypes, t)
 	}
 
-	alerting := map[string]interface{}{"alerting": providers}
-	data, err := yaml.Marshal(alerting)
+	// Build an ordered map so the YAML output is deterministic.
+	sort.Strings(providerTypes)
+	orderedProviders := yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+	for _, t := range providerTypes {
+		keyNode := &yaml.Node{Kind: yaml.ScalarNode, Value: t, Tag: "!!str"}
+		valBytes, _ := yaml.Marshal(providers[t])
+		var valNode yaml.Node
+		_ = yaml.Unmarshal(valBytes, &valNode)
+		orderedProviders.Content = append(orderedProviders.Content, keyNode)
+		if len(valNode.Content) > 0 {
+			orderedProviders.Content = append(orderedProviders.Content, valNode.Content[0])
+		} else {
+			orderedProviders.Content = append(orderedProviders.Content, &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"})
+		}
+	}
+
+	root := yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+	root.Content = append(root.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Value: "alerting", Tag: "!!str"},
+		&orderedProviders,
+	)
+	doc := yaml.Node{Kind: yaml.DocumentNode, Content: []*yaml.Node{&root}}
+	data, err := yaml.Marshal(&doc)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to marshal alerting config: %w", err)
 	}

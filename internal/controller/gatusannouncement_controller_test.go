@@ -212,3 +212,77 @@ func TestGatusAnnouncementReconciler_RequeuesWhenConfigMapMissing(t *testing.T) 
 		t.Error("expected RequeueAfter > 0 when ConfigMap is missing")
 	}
 }
+
+// TestGatusAnnouncementReconciler_DeletedAnnouncementRemoved verifies that deleting
+// an announcement CR removes it from the ConfigMap after reconciliation.
+func TestGatusAnnouncementReconciler_DeletedAnnouncementRemoved(t *testing.T) {
+	s := newTestScheme(t)
+	ann := &monitoringv1alpha1.GatusAnnouncement{
+		ObjectMeta: metav1.ObjectMeta{Name: "to-delete", Namespace: "default"},
+		Spec: monitoringv1alpha1.GatusAnnouncementSpec{
+			Timestamp: "2025-06-01T12:00:00Z",
+			Type:      "warning",
+			Message:   "Will be deleted",
+		},
+	}
+	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(announcementConfigMap(), ann).Build()
+	r := newAnnouncementReconciler(fakeClient)
+
+	// Create
+	reconcileAnnouncement(t, r, "to-delete", "default")
+	out := getAnnouncementsYAML(t, fakeClient)
+	announcements := out["announcements"].([]interface{})
+	if len(announcements) != 1 {
+		t.Fatalf("expected 1 announcement, got %d", len(announcements))
+	}
+
+	// Delete
+	if err := fakeClient.Delete(context.Background(), ann); err != nil {
+		t.Fatalf("failed to delete announcement: %v", err)
+	}
+
+	// Reconcile again (triggered by delete)
+	reconcileAnnouncement(t, r, "to-delete", "default")
+	out = getAnnouncementsYAML(t, fakeClient)
+	announcements = out["announcements"].([]interface{})
+	if len(announcements) != 0 {
+		t.Errorf("expected 0 announcements after delete, got %d", len(announcements))
+	}
+}
+
+// TestGatusAnnouncementReconciler_UpdateReflected verifies that updating an
+// announcement spec is reflected in the ConfigMap after reconciliation.
+func TestGatusAnnouncementReconciler_UpdateReflected(t *testing.T) {
+	s := newTestScheme(t)
+	ann := &monitoringv1alpha1.GatusAnnouncement{
+		ObjectMeta: metav1.ObjectMeta{Name: "updatable", Namespace: "default"},
+		Spec: monitoringv1alpha1.GatusAnnouncementSpec{
+			Timestamp: "2025-06-01T12:00:00Z",
+			Type:      "warning",
+			Message:   "Original message",
+		},
+	}
+	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(announcementConfigMap(), ann).Build()
+	r := newAnnouncementReconciler(fakeClient)
+
+	reconcileAnnouncement(t, r, "updatable", "default")
+
+	// Update
+	ann.Spec.Message = "Updated message"
+	ann.Spec.Type = "outage"
+	if err := fakeClient.Update(context.Background(), ann); err != nil {
+		t.Fatalf("failed to update announcement: %v", err)
+	}
+
+	reconcileAnnouncement(t, r, "updatable", "default")
+
+	cm := &corev1.ConfigMap{}
+	_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: "gatus-config", Namespace: "gatus"}, cm)
+	y := cm.Data["announcements.yaml"]
+	if !strings.Contains(y, "Updated message") {
+		t.Errorf("expected updated message in announcements.yaml, got:\n%s", y)
+	}
+	if !strings.Contains(y, "outage") {
+		t.Errorf("expected updated type in announcements.yaml, got:\n%s", y)
+	}
+}

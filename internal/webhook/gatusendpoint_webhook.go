@@ -29,7 +29,7 @@ var (
 		"DNS_RCODE",
 	}
 
-	// placeholderRegex matches any [PLACEHOLDER] or [PLACEHOLDER].path pattern.
+	// placeholderRegex matches any [PLACEHOLDER] token in a condition string.
 	placeholderRegex = regexp.MustCompile(`\[[A-Z_]+\]`)
 
 	// operatorRegex checks that at least one comparison operator is present.

@@ -210,8 +210,8 @@ func TestGatusAlertReconciler_InvalidAlertingConfigNotCounted(t *testing.T) {
 // is called for objects of a specific GVK.
 type errInjectingClient struct {
 	client.Client
-	gvk     schema.GroupVersionKind
-	getErr  error
+	gvk    schema.GroupVersionKind
+	getErr error
 }
 
 func (c *errInjectingClient) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {

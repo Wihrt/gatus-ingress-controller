@@ -32,7 +32,6 @@ spec:
               type: object
               required:
                 - type
-                - config
               properties:
                 type:
                   type: string

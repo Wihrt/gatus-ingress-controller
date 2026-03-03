@@ -54,7 +54,7 @@ tasks:
       - act pull_request -W .github/workflows/pr.yml --job docker
 
   act:e2e:
-    desc: Validate PR workflow locally (go + docker jobs; e2e requires k3s and is skipped)
+    desc: "Validate PR e2e job locally — requires a running Kubernetes cluster (e.g. k3s)"
     cmds:
       - act pull_request -W .github/workflows/pr.yml --job e2e
 

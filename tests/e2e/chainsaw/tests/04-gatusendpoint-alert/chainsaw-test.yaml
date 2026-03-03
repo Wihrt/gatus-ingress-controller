@@ -119,3 +119,60 @@ spec:
             name: test-override-endpoint
         - script:
             content: kubectl get secret gatus-secrets -n gatus -o jsonpath='{.data.endpoints\.yaml}' | base64 -d
+
+    # ── Step 3: Update alert reference on endpoint ───────────────────────────
+    - name: "[GatusEndpoint+Alert] update alert failureThreshold override reflected"
+      try:
+        - apply:
+            resource:
+              apiVersion: monitoring.gatus.io/v1alpha1
+              kind: GatusEndpoint
+              metadata:
+                name: test-alerted-endpoint
+              spec:
+                name: "alerted-endpoint"
+                group: "e2e"
+                url: "https://alerted.example.com"
+                conditions:
+                  - "[STATUS] == 200"
+                alerts:
+                  - name: test-slack-alert
+                    failureThreshold: 10
+                    successThreshold: 8
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: gatus-secrets
+                namespace: gatus
+              "(contains(base64_decode(lookup(data, 'endpoints.yaml')), 'failure-threshold: 10'))": true
+              "(contains(base64_decode(lookup(data, 'endpoints.yaml')), 'success-threshold: 8'))": true
+      catch:
+        - script:
+            content: kubectl get secret gatus-secrets -n gatus -o jsonpath='{.data.endpoints\.yaml}' | base64 -d
+
+    # ── Step 4: Delete endpoint with alert — removed from Secret ─────────────
+    - name: "[GatusEndpoint+Alert] deleted alerted endpoint removed from Secret"
+      try:
+        - delete:
+            ref:
+              apiVersion: monitoring.gatus.io/v1alpha1
+              kind: GatusEndpoint
+              name: test-alerted-endpoint
+        - script:
+            timeout: 30s
+            content: |
+              for i in $(seq 1 15); do
+                DATA=$(kubectl get secret gatus-secrets -n gatus -o jsonpath='{.data.endpoints\.yaml}' | base64 -d)
+                if echo "$DATA" | grep -q "alerted-endpoint"; then
+                  sleep 2
+                else
+                  exit 0
+                fi
+              done
+              echo "FAIL: test-alerted-endpoint still present in endpoints.yaml"
+              exit 1
+      catch:
+        - script:
+            content: kubectl get secret gatus-secrets -n gatus -o jsonpath='{.data.endpoints\.yaml}' | base64 -d

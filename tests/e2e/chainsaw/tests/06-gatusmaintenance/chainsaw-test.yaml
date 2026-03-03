@@ -71,3 +71,80 @@ spec:
       catch:
         - script:
             content: kubectl get configmap gatus-config -n gatus -o jsonpath='{.data.maintenance\.yaml}'
+
+    # ── Step 3: Update maintenance window is reflected ────────────────────────
+    - name: "[GatusMaintenance] update start time reflected in maintenance.yaml"
+      try:
+        - apply:
+            resource:
+              apiVersion: monitoring.gatus.io/v1alpha1
+              kind: GatusMaintenance
+              metadata:
+                name: aaa-maintenance
+              spec:
+                enabled: true
+                start: "04:00"
+                duration: "2h"
+                timezone: "UTC"
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: gatus-config
+                namespace: gatus
+              "(contains(lookup(data, 'maintenance.yaml'), '04:00'))": true
+              "(contains(lookup(data, 'maintenance.yaml'), '2h'))": true
+              "(contains(lookup(data, 'maintenance.yaml'), 'UTC'))": true
+      catch:
+        - script:
+            content: kubectl get configmap gatus-config -n gatus -o jsonpath='{.data.maintenance\.yaml}'
+
+    # ── Step 4: Delete first — second becomes active ─────────────────────────
+    - name: "[GatusMaintenance] delete winning CR — second CR becomes active"
+      try:
+        - delete:
+            ref:
+              apiVersion: monitoring.gatus.io/v1alpha1
+              kind: GatusMaintenance
+              name: aaa-maintenance
+        - script:
+            timeout: 30s
+            content: |
+              for i in $(seq 1 15); do
+                DATA=$(kubectl get configmap gatus-config -n gatus -o jsonpath='{.data.maintenance\.yaml}')
+                if echo "$DATA" | grep -q "23:00"; then
+                  exit 0
+                fi
+                sleep 2
+              done
+              echo "FAIL: test-maintenance (23:00) did not become active after aaa-maintenance deletion"
+              exit 1
+      catch:
+        - script:
+            content: kubectl get configmap gatus-config -n gatus -o jsonpath='{.data.maintenance\.yaml}'
+
+    # ── Step 5: Delete last — empty output ───────────────────────────────────
+    - name: "[GatusMaintenance] delete all CRs produces empty maintenance config"
+      try:
+        - delete:
+            ref:
+              apiVersion: monitoring.gatus.io/v1alpha1
+              kind: GatusMaintenance
+              name: test-maintenance
+        - script:
+            timeout: 30s
+            content: |
+              for i in $(seq 1 15); do
+                DATA=$(kubectl get configmap gatus-config -n gatus -o jsonpath='{.data.maintenance\.yaml}')
+                if echo "$DATA" | grep -q "23:00"; then
+                  sleep 2
+                else
+                  exit 0
+                fi
+              done
+              echo "FAIL: maintenance still present"
+              exit 1
+      catch:
+        - script:
+            content: kubectl get configmap gatus-config -n gatus -o jsonpath='{.data.maintenance\.yaml}'

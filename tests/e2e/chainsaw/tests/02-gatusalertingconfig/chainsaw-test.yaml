@@ -122,3 +122,82 @@ spec:
             name: discord-config
         - script:
             content: kubectl get secret gatus-secrets -n gatus -o jsonpath='{.data.alerting\.yaml}' | base64 -d
+
+    # ── Step 6: Update webhook-url is reflected in alerting.yaml ──────────────
+    - name: "[GatusAlertingConfig] update webhook-url is reflected in alerting.yaml"
+      try:
+        - apply:
+            resource:
+              apiVersion: monitoring.gatus.io/v1alpha1
+              kind: GatusAlertingConfig
+              metadata:
+                name: slack-config
+              spec:
+                type: slack
+                config:
+                  webhook-url: "https://hooks.slack.com/services/updated/updated/updated"
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: gatus-secrets
+                namespace: gatus
+              "(contains(base64_decode(lookup(data, 'alerting.yaml')), 'hooks.slack.com/services/updated'))": true
+      catch:
+        - describe:
+            apiVersion: monitoring.gatus.io/v1alpha1
+            kind: GatusAlertingConfig
+            name: slack-config
+        - script:
+            content: kubectl get secret gatus-secrets -n gatus -o jsonpath='{.data.alerting\.yaml}' | base64 -d
+
+    # ── Step 7: Delete Slack config removes it from alerting.yaml ─────────────
+    - name: "[GatusAlertingConfig] deleted config removed from alerting.yaml"
+      try:
+        - delete:
+            ref:
+              apiVersion: monitoring.gatus.io/v1alpha1
+              kind: GatusAlertingConfig
+              name: slack-config
+        - script:
+            timeout: 30s
+            content: |
+              for i in $(seq 1 15); do
+                DATA=$(kubectl get secret gatus-secrets -n gatus -o jsonpath='{.data.alerting\.yaml}' | base64 -d)
+                if echo "$DATA" | grep -q "hooks.slack.com"; then
+                  sleep 2
+                else
+                  exit 0
+                fi
+              done
+              echo "FAIL: slack config still present in alerting.yaml"
+              exit 1
+      catch:
+        - script:
+            content: kubectl get secret gatus-secrets -n gatus -o jsonpath='{.data.alerting\.yaml}' | base64 -d
+
+    # ── Step 8: Delete discord config removes it from alerting.yaml ───────────
+    - name: "[GatusAlertingConfig] deleted discord config removed from alerting.yaml"
+      try:
+        - delete:
+            ref:
+              apiVersion: monitoring.gatus.io/v1alpha1
+              kind: GatusAlertingConfig
+              name: discord-config
+        - script:
+            timeout: 30s
+            content: |
+              for i in $(seq 1 15); do
+                DATA=$(kubectl get secret gatus-secrets -n gatus -o jsonpath='{.data.alerting\.yaml}' | base64 -d)
+                if echo "$DATA" | grep -q "discord"; then
+                  sleep 2
+                else
+                  exit 0
+                fi
+              done
+              echo "FAIL: discord config still present in alerting.yaml"
+              exit 1
+      catch:
+        - script:
+            content: kubectl get secret gatus-secrets -n gatus -o jsonpath='{.data.alerting\.yaml}' | base64 -d

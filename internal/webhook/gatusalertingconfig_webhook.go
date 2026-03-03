@@ -3,6 +3,7 @@ package webhook
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
@@ -121,6 +122,7 @@ func toSortedKeys(m map[string]struct{}) []string {
 	for k := range m {
 		keys = append(keys, k)
 	}
+	sort.Strings(keys)
 	return keys
 }
 

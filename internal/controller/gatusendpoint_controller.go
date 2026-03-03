@@ -36,7 +36,7 @@ type gatusConfigFile struct {
 
 type gatusEndpointYAML struct {
 	Name               string                    `yaml:"name"`
-	Enabled            bool                      `yaml:"enabled,omitempty"`
+	Enabled            *bool                     `yaml:"enabled,omitempty"`
 	Group              string                    `yaml:"group,omitempty"`
 	URL                string                    `yaml:"url"`
 	Method             string                    `yaml:"method,omitempty"`
@@ -56,11 +56,11 @@ type gatusEndpointYAML struct {
 
 type gatusAlertYAML struct {
 	Type                    string                 `yaml:"type"`
-	Enabled                 bool                   `yaml:"enabled,omitempty"`
+	Enabled                 *bool                  `yaml:"enabled,omitempty"`
 	Description             string                 `yaml:"description,omitempty"`
 	FailureThreshold        int                    `yaml:"failure-threshold,omitempty"`
 	SuccessThreshold        int                    `yaml:"success-threshold,omitempty"`
-	SendOnResolved          bool                   `yaml:"send-on-resolved,omitempty"`
+	SendOnResolved          *bool                  `yaml:"send-on-resolved,omitempty"`
 	MinimumReminderInterval string                 `yaml:"minimum-reminder-interval,omitempty"`
 	ProviderOverride        map[string]interface{} `yaml:"provider-override,omitempty"`
 }
@@ -160,7 +160,7 @@ func (r *GatusEndpointReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 		epYAML := gatusEndpointYAML{
 			Name:        ep.Spec.Name,
-			Enabled:     ep.Spec.Enabled,
+			Enabled:     boolPtr(ep.Spec.Enabled),
 			Group:       ep.Spec.Group,
 			URL:         ep.Spec.URL,
 			Method:      ep.Spec.Method,
@@ -249,11 +249,11 @@ func (r *GatusEndpointReconciler) resolveAlerts(ctx context.Context, refs []moni
 
 		y := gatusAlertYAML{
 			Type:                    alertingConfig.Spec.Type,
-			Enabled:                 alert.Spec.Enabled,
+			Enabled:                 boolPtr(alert.Spec.Enabled),
 			Description:             alert.Spec.Description,
 			FailureThreshold:        alert.Spec.FailureThreshold,
 			SuccessThreshold:        alert.Spec.SuccessThreshold,
-			SendOnResolved:          alert.Spec.SendOnResolved,
+			SendOnResolved:          boolPtr(alert.Spec.SendOnResolved),
 			MinimumReminderInterval: alert.Spec.MinimumReminderInterval,
 		}
 
@@ -274,7 +274,7 @@ func (r *GatusEndpointReconciler) resolveAlerts(ctx context.Context, refs []moni
 			y.Description = ref.Description
 		}
 		if ref.Enabled != nil {
-			y.Enabled = *ref.Enabled
+			y.Enabled = ref.Enabled
 		}
 		if ref.FailureThreshold != 0 {
 			y.FailureThreshold = ref.FailureThreshold
@@ -283,7 +283,7 @@ func (r *GatusEndpointReconciler) resolveAlerts(ctx context.Context, refs []moni
 			y.SuccessThreshold = ref.SuccessThreshold
 		}
 		if ref.SendOnResolved != nil {
-			y.SendOnResolved = *ref.SendOnResolved
+			y.SendOnResolved = ref.SendOnResolved
 		}
 		if ref.MinimumReminderInterval != "" {
 			y.MinimumReminderInterval = ref.MinimumReminderInterval
