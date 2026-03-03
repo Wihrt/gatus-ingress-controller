@@ -87,6 +87,8 @@ spec:
                   webhook-url: "https://hooks.slack.com/services/other/other/other"
 
     # ── Step 5: configSecretRef merged into alerting config ────────────────────
+    # The configSecretRef Secret must live in the controller's namespace (gatus-system),
+    # because the controller reads it from its own namespace (POD_NAMESPACE).
     - name: "[GatusAlertingConfig] configSecretRef merged into alerting.yaml"
       try:
         - apply:
@@ -95,6 +97,7 @@ spec:
               kind: Secret
               metadata:
                 name: discord-secret
+                namespace: gatus-system
               stringData:
                 webhook-url: "https://discord.com/api/webhooks/secret-value"
         - apply:
@@ -201,3 +204,13 @@ spec:
       catch:
         - script:
             content: kubectl get secret gatus-secrets -n gatus -o jsonpath='{.data.alerting\.yaml}' | base64 -d
+
+    # ── Step 9: Clean up discord-secret from controller namespace ─────────────
+    - name: "[GatusAlertingConfig] cleanup discord-secret from controller namespace"
+      try:
+        - delete:
+            ref:
+              apiVersion: v1
+              kind: Secret
+              namespace: gatus-system
+              name: discord-secret
