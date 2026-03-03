@@ -12,7 +12,7 @@ TARGET_NAMESPACE="gatus"
 TIMEOUT="90s"
 RELEASE_NAME="gatus-ingress-controller"
 # renovate: datasource=helm depName=cert-manager registryUrl=https://charts.jetstack.io
-CERT_MANAGER_VERSION="1.19.4"
+CERT_MANAGER_VERSION="v1.19.4"
 
 echo "==> E2E setup: gatus-ingress-controller"
 echo "    Image:            ${IMAGE_REPOSITORY}:${IMAGE_TAG}"
@@ -36,6 +36,10 @@ helm upgrade --install cert-manager jetstack/cert-manager \
   --timeout "${TIMEOUT}"
 
 # ── 3. Deploy controller via Helm ─────────────────────────────────────────────
+# Apply CRDs explicitly — helm upgrade does not update resources in crds/ directory
+echo "==> Applying CRDs..."
+kubectl apply -f charts/gatus-ingress-controller/crds/
+
 echo "==> Installing controller via Helm (image: ${IMAGE_REPOSITORY}:${IMAGE_TAG})..."
 helm upgrade --install "${RELEASE_NAME}" ./charts/gatus-ingress-controller \
   --namespace "${NAMESPACE}" \

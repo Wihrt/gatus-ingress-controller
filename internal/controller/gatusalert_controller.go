@@ -5,9 +5,12 @@ import (
 	"fmt"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	monitoringv1alpha1 "github.com/Wihrt/gatus-ingress-controller/api/v1alpha1"
 )
@@ -74,5 +77,27 @@ func (r *GatusAlertReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 func (r *GatusAlertReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&monitoringv1alpha1.GatusAlert{}).
+		Watches(
+			&monitoringv1alpha1.GatusAlertingConfig{},
+			handler.EnqueueRequestsFromMapFunc(r.alertsForConfig),
+		).
 		Complete(r)
+}
+
+// alertsForConfig returns reconcile requests for all GatusAlerts in the same
+// namespace that reference the changed GatusAlertingConfig.
+func (r *GatusAlertReconciler) alertsForConfig(ctx context.Context, obj client.Object) []reconcile.Request {
+	alertList := &monitoringv1alpha1.GatusAlertList{}
+	if err := r.List(ctx, alertList, client.InNamespace(obj.GetNamespace())); err != nil {
+		return nil
+	}
+	var requests []reconcile.Request
+	for _, alert := range alertList.Items {
+		if alert.Spec.AlertingConfigRef == obj.GetName() {
+			requests = append(requests, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: alert.Name, Namespace: alert.Namespace},
+			})
+		}
+	}
+	return requests
 }

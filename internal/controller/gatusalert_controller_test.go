@@ -133,7 +133,39 @@ func TestGatusAlertReconciler_NotFound(t *testing.T) {
 	}
 }
 
-// TestGatusAlertReconciler_InvalidAlertingConfigNotCounted verifies that an invalid
+// TestGatusAlertReconciler_RetriggeredByAlertingConfigUpdate verifies that when
+// the GatusAlertingConfig transitions to Valid=True, alertsForConfig returns a
+// reconcile request for the referencing GatusAlert.
+func TestGatusAlertReconciler_RetriggeredByAlertingConfigUpdate(t *testing.T) {
+	s := newTestScheme(t)
+	alert := &monitoringv1alpha1.GatusAlert{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-slack", Namespace: "default"},
+		Spec:       monitoringv1alpha1.GatusAlertSpec{AlertingConfigRef: "slack-cfg"},
+	}
+	otherAlert := &monitoringv1alpha1.GatusAlert{
+		ObjectMeta: metav1.ObjectMeta{Name: "other-alert", Namespace: "default"},
+		Spec:       monitoringv1alpha1.GatusAlertSpec{AlertingConfigRef: "discord-cfg"}, // different ref
+	}
+	alertingCfg := &monitoringv1alpha1.GatusAlertingConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "slack-cfg", Namespace: "default"},
+		Spec:       monitoringv1alpha1.GatusAlertingConfigSpec{Type: "slack"},
+	}
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(s).
+		WithObjects(alert, otherAlert, alertingCfg).
+		Build()
+
+	r := newAlertReconciler(fakeClient)
+	requests := r.alertsForConfig(context.Background(), alertingCfg)
+
+	if len(requests) != 1 {
+		t.Fatalf("expected 1 reconcile request, got %d", len(requests))
+	}
+	if requests[0].Name != "my-slack" || requests[0].Namespace != "default" {
+		t.Errorf("unexpected request: %+v", requests[0])
+	}
+}
+
 // GatusAlertingConfig (missing required fields) does not count as "configured".
 func TestGatusAlertReconciler_InvalidAlertingConfigNotCounted(t *testing.T) {
 	s := newTestScheme(t)
