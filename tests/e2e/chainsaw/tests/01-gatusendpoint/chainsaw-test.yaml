@@ -1,0 +1,179 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: gatusendpoint
+spec:
+  concurrent: false
+  catch:
+    - podLogs:
+        namespace: gatus-system
+        selector: app.kubernetes.io/name=gatus-ingress-controller
+        tail: 100
+  steps:
+    # ── Step 1: Basic endpoint created in Secret ──────────────────────────────
+    - name: "[GatusEndpoint] basic endpoint created in Secret"
+      try:
+        - apply:
+            resource:
+              apiVersion: monitoring.gatus.io/v1alpha1
+              kind: GatusEndpoint
+              metadata:
+                name: test-app
+              spec:
+                name: "test-app"
+                group: "e2e"
+                url: "https://test-app.example.com"
+                conditions:
+                  - "[STATUS] == 200"
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: gatus-secrets
+                namespace: gatus
+              "(contains(base64_decode(lookup(data, 'endpoints.yaml')), 'test-app'))": true
+              "(contains(base64_decode(lookup(data, 'endpoints.yaml')), 'https://test-app.example.com'))": true
+              "(contains(base64_decode(lookup(data, 'endpoints.yaml')), '[STATUS] == 200'))": true
+      catch:
+        - describe:
+            apiVersion: monitoring.gatus.io/v1alpha1
+            kind: GatusEndpoint
+            name: test-app
+        - script:
+            content: kubectl get secret gatus-secrets -n gatus -o jsonpath='{.data.endpoints\.yaml}' | base64 -d
+
+    # ── Step 2: Default condition [STATUS] == 200 injected when empty ─────────
+    - name: "[GatusEndpoint] default condition injected when conditions is empty"
+      try:
+        - apply:
+            resource:
+              apiVersion: monitoring.gatus.io/v1alpha1
+              kind: GatusEndpoint
+              metadata:
+                name: test-no-conditions
+              spec:
+                name: "test-no-conditions"
+                group: "e2e"
+                url: "https://no-conditions.example.com"
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: gatus-secrets
+                namespace: gatus
+              "(contains(base64_decode(lookup(data, 'endpoints.yaml')), 'no-conditions'))": true
+              "(contains(base64_decode(lookup(data, 'endpoints.yaml')), '[STATUS] == 200'))": true
+      catch:
+        - describe:
+            apiVersion: monitoring.gatus.io/v1alpha1
+            kind: GatusEndpoint
+            name: test-no-conditions
+        - script:
+            content: kubectl get secret gatus-secrets -n gatus -o jsonpath='{.data.endpoints\.yaml}' | base64 -d
+
+    # ── Step 3: Multiple conditions persisted ────────────────────────────────
+    - name: "[GatusEndpoint] multiple conditions persisted"
+      try:
+        - apply:
+            resource:
+              apiVersion: monitoring.gatus.io/v1alpha1
+              kind: GatusEndpoint
+              metadata:
+                name: test-custom-spec
+              spec:
+                name: "custom-service"
+                group: "user-managed-group"
+                url: "https://custom.example.com"
+                conditions:
+                  - "[STATUS] == 200"
+                  - "[RESPONSE_TIME] < 500"
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: gatus-secrets
+                namespace: gatus
+              "(contains(base64_decode(lookup(data, 'endpoints.yaml')), 'custom-service'))": true
+              "(contains(base64_decode(lookup(data, 'endpoints.yaml')), 'user-managed-group'))": true
+              "(contains(base64_decode(lookup(data, 'endpoints.yaml')), 'RESPONSE_TIME'))": true
+      catch:
+        - describe:
+            apiVersion: monitoring.gatus.io/v1alpha1
+            kind: GatusEndpoint
+            name: test-custom-spec
+        - script:
+            content: kubectl get secret gatus-secrets -n gatus -o jsonpath='{.data.endpoints\.yaml}' | base64 -d
+
+    # ── Step 4: Update an endpoint and verify the new URL appears ─────────────
+    - name: "[GatusEndpoint] update URL is reflected in Secret"
+      try:
+        - apply:
+            resource:
+              apiVersion: monitoring.gatus.io/v1alpha1
+              kind: GatusEndpoint
+              metadata:
+                name: test-app
+              spec:
+                name: "test-app"
+                group: "e2e"
+                url: "https://updated-app.example.com"
+                conditions:
+                  - "[STATUS] == 200"
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: gatus-secrets
+                namespace: gatus
+              "(contains(base64_decode(lookup(data, 'endpoints.yaml')), 'https://updated-app.example.com'))": true
+      catch:
+        - describe:
+            apiVersion: monitoring.gatus.io/v1alpha1
+            kind: GatusEndpoint
+            name: test-app
+        - script:
+            content: kubectl get secret gatus-secrets -n gatus -o jsonpath='{.data.endpoints\.yaml}' | base64 -d
+
+    # ── Step 5: Delete an endpoint and verify it is removed from Secret ───────
+    - name: "[GatusEndpoint] deleted endpoint removed from Secret"
+      try:
+        - delete:
+            ref:
+              apiVersion: monitoring.gatus.io/v1alpha1
+              kind: GatusEndpoint
+              name: test-no-conditions
+        - script:
+            timeout: 30s
+            content: |
+              for i in $(seq 1 15); do
+                DATA=$(kubectl get secret gatus-secrets -n gatus -o jsonpath='{.data.endpoints\.yaml}' | base64 -d)
+                if echo "$DATA" | grep -q "no-conditions"; then
+                  sleep 2
+                else
+                  exit 0
+                fi
+              done
+              echo "FAIL: test-no-conditions still present in endpoints.yaml"
+              exit 1
+      catch:
+        - script:
+            content: kubectl get secret gatus-secrets -n gatus -o jsonpath='{.data.endpoints\.yaml}' | base64 -d
+
+    # ── Step 6: Webhook rejects endpoint with unknown placeholder ────────────
+    - name: "[GatusEndpoint] webhook rejects unknown condition placeholder"
+      try:
+        - error:
+            resource:
+              apiVersion: monitoring.gatus.io/v1alpha1
+              kind: GatusEndpoint
+              metadata:
+                name: invalid-condition-ep
+              spec:
+                name: "invalid-condition"
+                url: "https://invalid.example.com"
+                conditions:
+                  - "[UNKNOWN_PLACEHOLDER] == 200"

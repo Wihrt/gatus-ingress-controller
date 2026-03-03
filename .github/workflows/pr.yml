@@ -53,9 +53,9 @@ jobs:
           push: false
           tags: gatus-ingress-controller:ci-test
 
-  # ── E2E tests on k3s ─────────────────────────────────────────────────────────
+  # ── E2E tests (Chainsaw) on k3s ──────────────────────────────────────────────
   e2e:
-    name: E2E tests (k3s)
+    name: E2E tests / Chainsaw (k3s)
     runs-on: ubuntu-latest
     env:
       IMAGE_REGISTRY: gatus-ingress-controller
@@ -73,7 +73,7 @@ jobs:
 
       - name: Install k3s
         run: |
-          curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="v1.32.1+k3s1" INSTALL_K3S_EXEC="--disable=traefik" sh -
+          curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="v1.35.1+k3s1" INSTALL_K3S_EXEC="--disable=traefik" sh -
           mkdir -p ~/.kube
           sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
           sudo chown "$(whoami)" ~/.kube/config
@@ -86,5 +86,14 @@ jobs:
       - name: Install Helm
         uses: azure/setup-helm@v4
 
-      - name: Run e2e tests
-        run: bash tests/e2e/run.sh ci-test
+      - name: Install chainsaw
+        run: |
+          CHAINSAW_VERSION="v0.2.14"
+          curl -fsSL "https://github.com/kyverno/chainsaw/releases/download/${CHAINSAW_VERSION}/chainsaw_linux_amd64.tar.gz" | tar -xz chainsaw
+          sudo mv chainsaw /usr/local/bin/chainsaw
+          chainsaw version
+
+      - name: Run Chainsaw e2e tests
+        run: |
+          bash tests/e2e/setup.sh ci-test
+          chainsaw test tests/e2e/chainsaw/tests/ --config tests/e2e/chainsaw/chainsaw-config.yaml

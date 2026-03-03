@@ -1,23 +1,20 @@
 package v1alpha1
 
 import (
+	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type GatusAlertSpec struct {
-	// Type is the alert provider type.
+	// AlertingConfigRef is the name of a GatusAlertingConfig in the same namespace.
+	// The provider type is resolved from the referenced object at runtime.
 	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:Enum=awsses;clickup;custom;datadog;discord;email;gitea;github;gitlab;googlechat;gotify;homeassistant;ifttt;ilert;incident-io;line;matrix;mattermost;messagebird;n8n;newrelic;ntfy;opsgenie;pagerduty;plivo;pushover;rocketchat;sendgrid;signal;signl4;slack;splunk;squadcast;teams;teams-workflows;telegram;twilio;vonage;webex;zapier;zulip
-	Type string `json:"type"`
+	AlertingConfigRef string `json:"alertingConfigRef"`
 
 	// Enabled indicates whether this alert is enabled globally.
 	// +kubebuilder:default=true
 	// +optional
 	Enabled bool `json:"enabled,omitempty"`
-
-	// WebhookURL is the webhook URL for providers that support it (e.g. discord, slack).
-	// +optional
-	WebhookURL string `json:"webhookUrl,omitempty"`
 
 	// FailureThreshold is the default number of consecutive failures before triggering the alert.
 	// Can be overridden at the endpoint level via GatusAlertRef.
@@ -43,6 +40,12 @@ type GatusAlertSpec struct {
 	// Set to "0" or leave empty to disable reminders.
 	// +optional
 	MinimumReminderInterval string `json:"minimumReminderInterval,omitempty"`
+
+	// ProviderOverride allows overriding specific provider configuration fields for this alert.
+	// Maps directly to provider-override in the Gatus alert configuration.
+	// Only keys valid for the provider type are accepted (enforced by the admission webhook).
+	// +optional
+	ProviderOverride map[string]apiextv1.JSON `json:"providerOverride,omitempty"`
 }
 
 type GatusAlertStatus struct {

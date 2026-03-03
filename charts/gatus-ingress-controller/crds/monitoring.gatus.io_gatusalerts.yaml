@@ -31,60 +31,15 @@ spec:
             spec:
               type: object
               required:
-                - type
+                - alertingConfigRef
               properties:
-                type:
+                alertingConfigRef:
                   type: string
-                  description: Alert provider type. Must be one of the supported Gatus providers.
-                  enum:
-                    - awsses
-                    - clickup
-                    - custom
-                    - datadog
-                    - discord
-                    - email
-                    - gitea
-                    - github
-                    - gitlab
-                    - googlechat
-                    - gotify
-                    - homeassistant
-                    - ifttt
-                    - ilert
-                    - incident-io
-                    - line
-                    - matrix
-                    - mattermost
-                    - messagebird
-                    - n8n
-                    - newrelic
-                    - ntfy
-                    - opsgenie
-                    - pagerduty
-                    - plivo
-                    - pushover
-                    - rocketchat
-                    - sendgrid
-                    - signal
-                    - signl4
-                    - slack
-                    - splunk
-                    - squadcast
-                    - teams
-                    - teams-workflows
-                    - telegram
-                    - twilio
-                    - vonage
-                    - webex
-                    - zapier
-                    - zulip
+                  description: Name of the GatusAlertingConfig in the same namespace. The provider type is resolved from the referenced object.
                 enabled:
                   type: boolean
                   default: true
                   description: Whether this alert is globally enabled.
-                webhookUrl:
-                  type: string
-                  description: Webhook URL for providers that support it.
                 failureThreshold:
                   type: integer
                   default: 3
@@ -102,6 +57,10 @@ spec:
                 minimumReminderInterval:
                   type: string
                   description: Minimum duration between alert reminders (e.g. "30m"). Empty disables reminders.
+                providerOverride:
+                  type: object
+                  description: Provider-level configuration overrides for this alert. Keys are provider-specific.
+                  x-kubernetes-preserve-unknown-fields: true
             status:
               type: object
               properties:

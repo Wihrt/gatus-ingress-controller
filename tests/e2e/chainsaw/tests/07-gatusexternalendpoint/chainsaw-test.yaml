@@ -1,0 +1,161 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: gatusexternalendpoint
+spec:
+  concurrent: false
+  catch:
+    - podLogs:
+        namespace: gatus-system
+        selector: app.kubernetes.io/name=gatus-ingress-controller
+        tail: 100
+  steps:
+    # ── Step 1: External endpoint aggregated into external-endpoints.yaml ─────
+    - name: "[GatusExternalEndpoint] aggregated into external-endpoints.yaml Secret"
+      try:
+        - apply:
+            resource:
+              apiVersion: monitoring.gatus.io/v1alpha1
+              kind: GatusExternalEndpoint
+              metadata:
+                name: test-worker
+              spec:
+                name: "e2e-worker"
+                group: "workers"
+                token: "my-e2e-secret-token"
+                heartbeat:
+                  interval: "30m"
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: gatus-secrets
+                namespace: gatus
+              "(contains(base64_decode(lookup(data, 'external-endpoints.yaml')), 'e2e-worker'))": true
+              "(contains(base64_decode(lookup(data, 'external-endpoints.yaml')), 'workers'))": true
+              "(contains(base64_decode(lookup(data, 'external-endpoints.yaml')), 'my-e2e-secret-token'))": true
+              "(contains(base64_decode(lookup(data, 'external-endpoints.yaml')), '30m'))": true
+      catch:
+        - describe:
+            apiVersion: monitoring.gatus.io/v1alpha1
+            kind: GatusExternalEndpoint
+            name: test-worker
+        - script:
+            content: kubectl get secret gatus-secrets -n gatus -o jsonpath='{.data.external-endpoints\.yaml}' | base64 -d
+
+    # ── Step 2: Alert reference renders in external-endpoints.yaml ───────────
+    - name: "[GatusExternalEndpoint+Alert] alert reference renders in external-endpoints.yaml"
+      try:
+        - apply:
+            resource:
+              apiVersion: monitoring.gatus.io/v1alpha1
+              kind: GatusAlertingConfig
+              metadata:
+                name: slack-config
+              spec:
+                type: slack
+                config:
+                  webhook-url: "https://hooks.slack.com/services/test/test/test"
+        - apply:
+            resource:
+              apiVersion: monitoring.gatus.io/v1alpha1
+              kind: GatusAlert
+              metadata:
+                name: test-slack-alert
+              spec:
+                alertingConfigRef: slack-config
+                failureThreshold: 5
+                successThreshold: 2
+                sendOnResolved: true
+        - apply:
+            resource:
+              apiVersion: monitoring.gatus.io/v1alpha1
+              kind: GatusExternalEndpoint
+              metadata:
+                name: test-alerted-worker
+              spec:
+                name: "alerted-worker"
+                group: "workers"
+                token: "my-alerted-token"
+                alerts:
+                  - name: test-slack-alert
+                    failureThreshold: 3
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: gatus-secrets
+                namespace: gatus
+              "(contains(base64_decode(lookup(data, 'external-endpoints.yaml')), 'alerted-worker'))": true
+              "(contains(base64_decode(lookup(data, 'external-endpoints.yaml')), 'type: slack'))": true
+              "(contains(base64_decode(lookup(data, 'external-endpoints.yaml')), 'failure-threshold: 3'))": true
+      catch:
+        - describe:
+            apiVersion: monitoring.gatus.io/v1alpha1
+            kind: GatusExternalEndpoint
+            name: test-alerted-worker
+        - describe:
+            apiVersion: monitoring.gatus.io/v1alpha1
+            kind: GatusAlert
+            name: test-slack-alert
+        - script:
+            content: kubectl get secret gatus-secrets -n gatus -o jsonpath='{.data.external-endpoints\.yaml}' | base64 -d
+
+    # ── Step 3: Update token is reflected in Secret ──────────────────────────
+    - name: "[GatusExternalEndpoint] update token reflected in external-endpoints.yaml"
+      try:
+        - apply:
+            resource:
+              apiVersion: monitoring.gatus.io/v1alpha1
+              kind: GatusExternalEndpoint
+              metadata:
+                name: test-worker
+              spec:
+                name: "e2e-worker"
+                group: "workers"
+                token: "updated-secret-token"
+                heartbeat:
+                  interval: "15m"
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: gatus-secrets
+                namespace: gatus
+              "(contains(base64_decode(lookup(data, 'external-endpoints.yaml')), 'updated-secret-token'))": true
+              "(contains(base64_decode(lookup(data, 'external-endpoints.yaml')), '15m'))": true
+      catch:
+        - describe:
+            apiVersion: monitoring.gatus.io/v1alpha1
+            kind: GatusExternalEndpoint
+            name: test-worker
+        - script:
+            content: kubectl get secret gatus-secrets -n gatus -o jsonpath='{.data.external-endpoints\.yaml}' | base64 -d
+
+    # ── Step 4: Delete external endpoint removes it from Secret ──────────────
+    - name: "[GatusExternalEndpoint] deleted endpoint removed from external-endpoints.yaml"
+      try:
+        - delete:
+            ref:
+              apiVersion: monitoring.gatus.io/v1alpha1
+              kind: GatusExternalEndpoint
+              name: test-worker
+        - script:
+            timeout: 30s
+            content: |
+              for i in $(seq 1 15); do
+                DATA=$(kubectl get secret gatus-secrets -n gatus -o jsonpath='{.data.external-endpoints\.yaml}' | base64 -d)
+                if echo "$DATA" | grep -q "e2e-worker"; then
+                  sleep 2
+                else
+                  exit 0
+                fi
+              done
+              echo "FAIL: test-worker still present in external-endpoints.yaml"
+              exit 1
+      catch:
+        - script:
+            content: kubectl get secret gatus-secrets -n gatus -o jsonpath='{.data.external-endpoints\.yaml}' | base64 -d

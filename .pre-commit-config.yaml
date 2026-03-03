@@ -12,23 +12,30 @@ repos:
 
   - repo: local
     hooks:
+      - id: go-fmt
+        name: go fmt
+        entry: task fmt
+        language: system
+        pass_filenames: false
+        types: [go]
+
       - id: go-vet
         name: go vet
-        entry: go vet ./...
+        entry: task vet
         language: system
         pass_filenames: false
         types: [go]
 
       - id: go-build
         name: go build
-        entry: go build ./...
+        entry: task build
         language: system
         pass_filenames: false
         types: [go]
 
       - id: go-test
         name: go test
-        entry: go test ./...
+        entry: task test
         language: system
         pass_filenames: false
         types: [go]

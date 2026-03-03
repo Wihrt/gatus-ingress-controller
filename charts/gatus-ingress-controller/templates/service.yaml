@@ -1,0 +1,17 @@
+{{- if .Values.webhook.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "gatus-ingress-controller.fullname" . }}-webhook
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gatus-ingress-controller.labels" . | nindent 4 }}
+spec:
+  ports:
+    - name: https
+      port: 443
+      targetPort: 9443
+      protocol: TCP
+  selector:
+    {{- include "gatus-ingress-controller.selectorLabels" . | nindent 4 }}
+{{- end }}

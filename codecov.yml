@@ -1,0 +1,6 @@
+# Codecov configuration
+# https://docs.codecov.com/docs/codecovyml-reference
+
+ignore:
+  - "api/**"          # CRD type declarations — purely declarative, no business logic
+  - "cmd/**"          # main.go — requires a real Kubernetes cluster (no unit tests possible)

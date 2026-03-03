@@ -27,9 +27,20 @@ tasks:
       - go vet ./...
 
   docker-build:
-    desc: Build the container image
+    internal: true
     cmds:
       - docker build -t {{.IMAGE_REGISTRY}}/{{.IMAGE_REPO}}:{{.IMAGE_TAG}} .
+
+  docker-build:latest:
+    desc: Build the container image
+    cmds:
+      - task: docker-build
+
+  docker-build:ci:
+    cmds:
+      - task: docker-build
+        vars:
+          IMAGE_TAG: "ci-test"
 
   docker-push:
     desc: Push the container image
@@ -41,6 +52,11 @@ tasks:
     cmds:
       - act pull_request -W .github/workflows/pr.yml --job go
       - act pull_request -W .github/workflows/pr.yml --job docker
+
+  act:e2e:
+    desc: "Validate PR e2e job locally — requires a running Kubernetes cluster (e.g. k3s)"
+    cmds:
+      - act pull_request -W .github/workflows/pr.yml --job e2e
 
   act:main:
     desc: Validate Main workflow locally (go job; docker job pushes to registry and is skipped)
@@ -56,13 +72,9 @@ tasks:
       - act workflow_dispatch -W .github/workflows/tag.yml --input tag={{.TAG}} -s GITHUB_TOKEN="$(gh auth token)"
 
   e2e:
-    desc: "Run e2e tests against a running cluster. Usage: task e2e TAG=ci-test (requires KUBECONFIG configured)"
+    desc: "Run Chainsaw e2e tests against a running cluster. Usage: task e2e TAG=ci-test"
     vars:
       TAG: '{{.TAG | default "ci-test"}}'
     cmds:
-      - bash tests/e2e/run.sh {{.TAG}}
-
-  hooks:install:
-    desc: Install pre-commit hooks
-    cmds:
-      - pre-commit install
+      - bash tests/e2e/setup.sh {{.TAG}}
+      - chainsaw test tests/e2e/chainsaw/tests/ --config tests/e2e/chainsaw/chainsaw-config.yaml

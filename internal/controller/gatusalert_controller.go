@@ -3,96 +3,107 @@ package controller
 import (
 	"context"
 	"fmt"
-	"sort"
 
-	"gopkg.in/yaml.v3"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	monitoringv1alpha1 "github.com/Wihrt/gatus-ingress-controller/api/v1alpha1"
 )
 
-const alertingKey = "alerting.yaml"
-
-// GatusAlertReconciler aggregates all GatusAlert CRs and writes alerting.yaml
-// to the shared Gatus ConfigMap. One CR per alert provider type is supported;
-// if multiple CRs share the same type, the first (alphabetically by namespace/name) is used.
+// GatusAlertReconciler validates GatusAlert CRs by checking if a corresponding
+// GatusAlertingConfig of the same provider type exists. Sets the Configured status condition.
 type GatusAlertReconciler struct {
 	client.Client
-	TargetNamespace string
-	ConfigMapName   string
-}
-
-// gatusAlertProviderYAML mirrors the Gatus alerting.<type> config block.
-type gatusAlertProviderYAML struct {
-	WebhookURL   string                    `yaml:"webhook-url,omitempty"`
-	DefaultAlert *gatusDefaultAlertYAML    `yaml:"default-alert,omitempty"`
-}
-
-type gatusDefaultAlertYAML struct {
-	Enabled                 bool   `yaml:"enabled,omitempty"`
-	FailureThreshold        int    `yaml:"failure-threshold,omitempty"`
-	SuccessThreshold        int    `yaml:"success-threshold,omitempty"`
-	SendOnResolved          bool   `yaml:"send-on-resolved,omitempty"`
-	Description             string `yaml:"description,omitempty"`
-	MinimumReminderInterval string `yaml:"minimum-reminder-interval,omitempty"`
 }
 
 func (r *GatusAlertReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 	logger.Info("Reconciling GatusAlert", "name", req.Name, "namespace", req.Namespace)
 
-	alertList := &monitoringv1alpha1.GatusAlertList{}
-	if err := r.List(ctx, alertList); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to list GatusAlerts: %w", err)
+	alert := &monitoringv1alpha1.GatusAlert{}
+	if err := r.Get(ctx, req.NamespacedName, alert); err != nil {
+		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// Sort by namespace/name for deterministic ordering when deduplicating.
-	sort.Slice(alertList.Items, func(i, j int) bool {
-		ki := alertList.Items[i].Namespace + "/" + alertList.Items[i].Name
-		kj := alertList.Items[j].Namespace + "/" + alertList.Items[j].Name
-		return ki < kj
+	configured := false
+	condReason := "AlertingConfigNotFound"
+	condMessage := fmt.Sprintf("GatusAlertingConfig %q not found in namespace %q", alert.Spec.AlertingConfigRef, req.Namespace)
+
+	if alert.Spec.AlertingConfigRef != "" {
+		cfg := &monitoringv1alpha1.GatusAlertingConfig{}
+		err := r.Get(ctx, client.ObjectKey{Name: alert.Spec.AlertingConfigRef, Namespace: req.Namespace}, cfg)
+		if err != nil && !apierrors.IsNotFound(err) {
+			logger.Error(err, "failed to get GatusAlertingConfig", "name", alert.Spec.AlertingConfigRef, "namespace", req.Namespace)
+			return ctrl.Result{}, fmt.Errorf("failed to get GatusAlertingConfig %q: %w", alert.Spec.AlertingConfigRef, err)
+		}
+		if err == nil {
+			// Trust the GatusAlertingConfig's own status condition.
+			for _, cond := range cfg.Status.Conditions {
+				if cond.Type == "Valid" && cond.Status == metav1.ConditionTrue {
+					configured = true
+					break
+				}
+			}
+			if !configured {
+				condReason = "AlertingConfigInvalid"
+				condMessage = fmt.Sprintf("GatusAlertingConfig %q exists but is not Valid", alert.Spec.AlertingConfigRef)
+			}
+		}
+	} else {
+		condReason = "MissingAlertingConfigRef"
+		condMessage = "spec.alertingConfigRef must be set"
+	}
+
+	condStatus := metav1.ConditionTrue
+	if configured {
+		condReason = "AlertingConfigFound"
+		condMessage = fmt.Sprintf("GatusAlertingConfig %q is valid", alert.Spec.AlertingConfigRef)
+	} else {
+		condStatus = metav1.ConditionFalse
+	}
+
+	setCondition(&alert.Status.Conditions, metav1.Condition{
+		Type:    "Configured",
+		Status:  condStatus,
+		Reason:  condReason,
+		Message: condMessage,
 	})
-
-	// Build a map of alert type → provider config. First CR per type wins.
-	providers := make(map[string]gatusAlertProviderYAML)
-	for _, a := range alertList.Items {
-		t := a.Spec.Type
-		if t == "" {
-			continue
-		}
-		if _, exists := providers[t]; exists {
-			logger.Info("Multiple GatusAlert CRs for the same type — skipping duplicate",
-				"type", t, "name", a.Name, "namespace", a.Namespace)
-			continue
-		}
-		providers[t] = gatusAlertProviderYAML{
-			WebhookURL: a.Spec.WebhookURL,
-			DefaultAlert: &gatusDefaultAlertYAML{
-				Enabled:                 a.Spec.Enabled,
-				FailureThreshold:        a.Spec.FailureThreshold,
-				SuccessThreshold:        a.Spec.SuccessThreshold,
-				SendOnResolved:          a.Spec.SendOnResolved,
-				Description:             a.Spec.Description,
-				MinimumReminderInterval: a.Spec.MinimumReminderInterval,
-			},
-		}
+	if err := r.Status().Update(ctx, alert); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to update GatusAlert status: %w", err)
 	}
-
-	cfg := map[string]interface{}{
-		"alerting": providers,
-	}
-	data, err := yaml.Marshal(cfg)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to marshal alerting config: %w", err)
-	}
-
-	return upsertConfigMapKey(ctx, r.Client, r.TargetNamespace, r.ConfigMapName, alertingKey, string(data))
+	return ctrl.Result{}, nil
 }
 
 func (r *GatusAlertReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&monitoringv1alpha1.GatusAlert{}).
+		Watches(
+			&monitoringv1alpha1.GatusAlertingConfig{},
+			handler.EnqueueRequestsFromMapFunc(r.alertsForConfig),
+		).
 		Complete(r)
+}
+
+// alertsForConfig returns reconcile requests for all GatusAlerts in the same
+// namespace that reference the changed GatusAlertingConfig.
+func (r *GatusAlertReconciler) alertsForConfig(ctx context.Context, obj client.Object) []reconcile.Request {
+	alertList := &monitoringv1alpha1.GatusAlertList{}
+	if err := r.List(ctx, alertList, client.InNamespace(obj.GetNamespace())); err != nil {
+		return nil
+	}
+	var requests []reconcile.Request
+	for _, alert := range alertList.Items {
+		if alert.Spec.AlertingConfigRef == obj.GetName() {
+			requests = append(requests, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: alert.Name, Namespace: alert.Namespace},
+			})
+		}
+	}
+	return requests
 }

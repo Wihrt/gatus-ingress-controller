@@ -12,6 +12,16 @@
       ],
       "depNameTemplate": "k3s-io/k3s",
       "datasourceTemplate": "github-releases"
+    },
+    {
+      "customType": "regex",
+      "fileMatch": ["^tests/e2e/setup\\.sh$"],
+      "matchStrings": [
+        "CERT_MANAGER_VERSION=\"(?<currentValue>[^\"]+)\""
+      ],
+      "depNameTemplate": "cert-manager",
+      "datasourceTemplate": "helm",
+      "registryUrlTemplate": "https://charts.jetstack.io"
     }
   ]
 }
