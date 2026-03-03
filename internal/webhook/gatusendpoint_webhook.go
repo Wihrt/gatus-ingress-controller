@@ -83,22 +83,19 @@ func validateCondition(s string, fld *field.Path) *field.Error {
 		return field.Invalid(fld, s, "condition must contain a placeholder such as [STATUS] or [BODY]")
 	}
 
-	foundValid := false
 	for _, m := range matches {
 		// Strip brackets.
 		name := m[1 : len(m)-1]
+		isValid := false
 		for _, p := range validPlaceholders {
 			if name == p {
-				foundValid = true
+				isValid = true
 				break
 			}
 		}
-		if foundValid {
-			break
+		if !isValid {
+			return field.Invalid(fld, s, fmt.Sprintf("condition contains an unknown placeholder %q; valid placeholders are %v", m, validPlaceholders))
 		}
-	}
-	if !foundValid {
-		return field.Invalid(fld, s, fmt.Sprintf("condition contains an unknown placeholder %v; valid placeholders are %v", matches, validPlaceholders))
 	}
 
 	// Validate function usage: len() and has() only work with [BODY].
