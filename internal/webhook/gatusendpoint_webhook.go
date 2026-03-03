@@ -34,6 +34,9 @@ var (
 
 	// operatorRegex checks that at least one comparison operator is present.
 	operatorRegex = regexp.MustCompile(`==|!=|<=|>=|<|>`)
+
+	// lenHasFuncRegex matches any len(...) or has(...) function call in an expression.
+	lenHasFuncRegex = regexp.MustCompile(`(?i)\b(?:len|has)\(([^)]*)\)`)
 )
 
 func (v *GatusEndpointValidator) ValidateCreate(_ context.Context, obj runtime.Object) (admission.Warnings, error) {
@@ -99,9 +102,9 @@ func validateCondition(s string, fld *field.Path) *field.Error {
 	}
 
 	// Validate function usage: len() and has() only work with [BODY].
-	lower := strings.ToLower(s)
-	if strings.HasPrefix(lower, "len(") || strings.HasPrefix(lower, "has(") {
-		if !strings.Contains(s, "[BODY]") {
+	for _, match := range lenHasFuncRegex.FindAllStringSubmatch(s, -1) {
+		arg := strings.TrimSpace(match[1])
+		if !strings.HasPrefix(arg, "[BODY]") {
 			return field.Invalid(fld, s, "len() and has() functions can only be used with the [BODY] placeholder")
 		}
 	}
