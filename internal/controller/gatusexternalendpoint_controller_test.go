@@ -361,3 +361,105 @@ func TestGatusExternalEndpointReconciler_ProviderOverrideFromAlert(t *testing.T)
 		t.Errorf("expected 'teams.example.com' in external-endpoints.yaml, got:\n%s", raw)
 	}
 }
+
+// TestGatusExternalEndpointReconciler_DeletedEndpointRemoved verifies that deleting
+// a GatusExternalEndpoint CR removes it from the Secret after reconciliation.
+func TestGatusExternalEndpointReconciler_DeletedEndpointRemoved(t *testing.T) {
+	s := newTestScheme(t)
+	ext := &monitoringv1alpha1.GatusExternalEndpoint{
+		ObjectMeta: metav1.ObjectMeta{Name: "to-delete", Namespace: "default"},
+		Spec: monitoringv1alpha1.GatusExternalEndpointSpec{
+			Name:  "Deletable Worker",
+			Token: "tok-delete",
+		},
+	}
+	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(extEndpointSecret(), ext).Build()
+	r := newExtEndpointReconciler(fakeClient)
+
+	// Create
+	reconcileExtEndpoint(t, r, "to-delete", "default")
+	out := getExternalEndpointsYAML(t, fakeClient)
+	endpoints := out["external-endpoints"].([]interface{})
+	if len(endpoints) != 1 {
+		t.Fatalf("expected 1 endpoint, got %d", len(endpoints))
+	}
+
+	// Delete
+	if err := fakeClient.Delete(context.Background(), ext); err != nil {
+		t.Fatalf("failed to delete external endpoint: %v", err)
+	}
+
+	// Reconcile again
+	reconcileExtEndpoint(t, r, "to-delete", "default")
+	out = getExternalEndpointsYAML(t, fakeClient)
+	endpoints = out["external-endpoints"].([]interface{})
+	if len(endpoints) != 0 {
+		t.Errorf("expected 0 endpoints after delete, got %d", len(endpoints))
+	}
+}
+
+// TestGatusExternalEndpointReconciler_UpdateTokenReflected verifies that updating
+// a GatusExternalEndpoint's token is reflected in the Secret after reconciliation.
+func TestGatusExternalEndpointReconciler_UpdateTokenReflected(t *testing.T) {
+	s := newTestScheme(t)
+	ext := &monitoringv1alpha1.GatusExternalEndpoint{
+		ObjectMeta: metav1.ObjectMeta{Name: "updatable-ext", Namespace: "default"},
+		Spec: monitoringv1alpha1.GatusExternalEndpointSpec{
+			Name:  "Updatable Worker",
+			Token: "original-token",
+		},
+	}
+	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(extEndpointSecret(), ext).Build()
+	r := newExtEndpointReconciler(fakeClient)
+
+	reconcileExtEndpoint(t, r, "updatable-ext", "default")
+
+	// Update
+	ext.Spec.Token = "updated-token"
+	ext.Spec.Group = "new-group"
+	if err := fakeClient.Update(context.Background(), ext); err != nil {
+		t.Fatalf("failed to update external endpoint: %v", err)
+	}
+
+	reconcileExtEndpoint(t, r, "updatable-ext", "default")
+
+	secret := &corev1.Secret{}
+	_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: "gatus-secrets", Namespace: "gatus"}, secret)
+	raw := string(secret.Data["external-endpoints.yaml"])
+
+	if !contains(raw, "updated-token") {
+		t.Errorf("expected updated token in output, got:\n%s", raw)
+	}
+	if !contains(raw, "new-group") {
+		t.Errorf("expected updated group in output, got:\n%s", raw)
+	}
+}
+
+// TestGatusExternalEndpointReconciler_DeterministicOrder verifies that multiple
+// external endpoints produce deterministic YAML output regardless of creation order.
+func TestGatusExternalEndpointReconciler_DeterministicOrder(t *testing.T) {
+	s := newTestScheme(t)
+	ext1 := &monitoringv1alpha1.GatusExternalEndpoint{
+		ObjectMeta: metav1.ObjectMeta{Name: "zzz-worker", Namespace: "default"},
+		Spec:       monitoringv1alpha1.GatusExternalEndpointSpec{Name: "ZZZ Worker", Token: "tok-z"},
+	}
+	ext2 := &monitoringv1alpha1.GatusExternalEndpoint{
+		ObjectMeta: metav1.ObjectMeta{Name: "aaa-worker", Namespace: "default"},
+		Spec:       monitoringv1alpha1.GatusExternalEndpointSpec{Name: "AAA Worker", Token: "tok-a"},
+	}
+	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(extEndpointSecret(), ext1, ext2).Build()
+	r := newExtEndpointReconciler(fakeClient)
+
+	reconcileExtEndpoint(t, r, "zzz-worker", "default")
+
+	out := getExternalEndpointsYAML(t, fakeClient)
+	endpoints := out["external-endpoints"].([]interface{})
+	if len(endpoints) != 2 {
+		t.Fatalf("expected 2 endpoints, got %d", len(endpoints))
+	}
+	// First should be aaa-worker (alphabetical order)
+	first := endpoints[0].(map[string]interface{})
+	if first["name"] != "AAA Worker" {
+		t.Errorf("expected first endpoint to be 'AAA Worker', got %v", first["name"])
+	}
+}

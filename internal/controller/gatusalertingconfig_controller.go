@@ -81,43 +81,50 @@ func (r *GatusAlertingConfigReconciler) Reconcile(ctx context.Context, req ctrl.
 	logger.Info("Reconciling GatusAlertingConfig", "name", req.Name, "namespace", req.Namespace)
 
 	// Load the triggering CR to update its status.
+	// If the CR was deleted we still need to re-aggregate.
 	cfg := &monitoringv1alpha1.GatusAlertingConfig{}
+	crFound := true
 	if err := r.Get(ctx, req.NamespacedName, cfg); err != nil {
-		return ctrl.Result{}, client.IgnoreNotFound(err)
-	}
-
-	// Resolve combined config (inline + configSecretRef).
-	merged, requeueResult, err := r.resolveConfig(ctx, cfg)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	if requeueResult != nil {
-		return *requeueResult, nil
-	}
-
-	// Validate required fields against the merged config.
-	missing := validateMergedConfig(cfg.Spec.Type, merged)
-	if len(missing) > 0 {
-		setCondition(&cfg.Status.Conditions, metav1.Condition{
-			Type:    "Valid",
-			Status:  metav1.ConditionFalse,
-			Reason:  "MissingRequiredFields",
-			Message: fmt.Sprintf("missing required fields: %v", missing),
-		})
-		if err := r.Status().Update(ctx, cfg); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to update GatusAlertingConfig status: %w", err)
+		if client.IgnoreNotFound(err) != nil {
+			return ctrl.Result{}, err
 		}
-		return ctrl.Result{}, nil
+		crFound = false
 	}
 
-	setCondition(&cfg.Status.Conditions, metav1.Condition{
-		Type:    "Valid",
-		Status:  metav1.ConditionTrue,
-		Reason:  "ConfigValid",
-		Message: "All required fields are present",
-	})
-	if err := r.Status().Update(ctx, cfg); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to update GatusAlertingConfig status: %w", err)
+	if crFound {
+		// Resolve combined config (inline + configSecretRef).
+		merged, requeueResult, err := r.resolveConfig(ctx, cfg)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if requeueResult != nil {
+			return *requeueResult, nil
+		}
+
+		// Validate required fields against the merged config.
+		missing := validateMergedConfig(cfg.Spec.Type, merged)
+		if len(missing) > 0 {
+			setCondition(&cfg.Status.Conditions, metav1.Condition{
+				Type:    "Valid",
+				Status:  metav1.ConditionFalse,
+				Reason:  "MissingRequiredFields",
+				Message: fmt.Sprintf("missing required fields: %v", missing),
+			})
+			if err := r.Status().Update(ctx, cfg); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to update GatusAlertingConfig status: %w", err)
+			}
+			// Still aggregate to remove this invalid config from the Secret.
+		} else {
+			setCondition(&cfg.Status.Conditions, metav1.Condition{
+				Type:    "Valid",
+				Status:  metav1.ConditionTrue,
+				Reason:  "ConfigValid",
+				Message: "All required fields are present",
+			})
+			if err := r.Status().Update(ctx, cfg); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to update GatusAlertingConfig status: %w", err)
+			}
+		}
 	}
 
 	// Aggregate all valid GatusAlertingConfig CRs.

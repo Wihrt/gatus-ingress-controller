@@ -72,3 +72,84 @@ spec:
             name: test-announcement-newer
         - script:
             content: kubectl get configmap gatus-config -n gatus -o jsonpath='{.data.announcements\.yaml}'
+
+    # ── Step 3: Update announcement message is reflected ─────────────────────
+    - name: "[GatusAnnouncement] update message reflected in announcements.yaml"
+      try:
+        - apply:
+            resource:
+              apiVersion: monitoring.gatus.io/v1alpha1
+              kind: GatusAnnouncement
+              metadata:
+                name: test-announcement
+              spec:
+                timestamp: "2025-11-07T22:00:00Z"
+                type: outage
+                message: "Updated maintenance message for E2E."
+                archived: true
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: gatus-config
+                namespace: gatus
+              "(contains(lookup(data, 'announcements.yaml'), 'Updated maintenance message'))": true
+              "(contains(lookup(data, 'announcements.yaml'), 'outage'))": true
+      catch:
+        - describe:
+            apiVersion: monitoring.gatus.io/v1alpha1
+            kind: GatusAnnouncement
+            name: test-announcement
+        - script:
+            content: kubectl get configmap gatus-config -n gatus -o jsonpath='{.data.announcements\.yaml}'
+
+    # ── Step 4: Delete announcement is removed from ConfigMap ────────────────
+    - name: "[GatusAnnouncement] deleted announcement removed from announcements.yaml"
+      try:
+        - delete:
+            ref:
+              apiVersion: monitoring.gatus.io/v1alpha1
+              kind: GatusAnnouncement
+              name: test-announcement
+        - script:
+            timeout: 30s
+            content: |
+              for i in $(seq 1 15); do
+                DATA=$(kubectl get configmap gatus-config -n gatus -o jsonpath='{.data.announcements\.yaml}')
+                if echo "$DATA" | grep -q "Updated maintenance message"; then
+                  sleep 2
+                else
+                  exit 0
+                fi
+              done
+              echo "FAIL: test-announcement still present in announcements.yaml"
+              exit 1
+      catch:
+        - script:
+            content: kubectl get configmap gatus-config -n gatus -o jsonpath='{.data.announcements\.yaml}'
+
+    # ── Step 5: Delete last announcement — list becomes empty ────────────────
+    - name: "[GatusAnnouncement] deleting all announcements produces empty list"
+      try:
+        - delete:
+            ref:
+              apiVersion: monitoring.gatus.io/v1alpha1
+              kind: GatusAnnouncement
+              name: test-announcement-newer
+        - script:
+            timeout: 30s
+            content: |
+              for i in $(seq 1 15); do
+                DATA=$(kubectl get configmap gatus-config -n gatus -o jsonpath='{.data.announcements\.yaml}')
+                if echo "$DATA" | grep -q "Newer announcement"; then
+                  sleep 2
+                else
+                  exit 0
+                fi
+              done
+              echo "FAIL: announcements still present"
+              exit 1
+      catch:
+        - script:
+            content: kubectl get configmap gatus-config -n gatus -o jsonpath='{.data.announcements\.yaml}'

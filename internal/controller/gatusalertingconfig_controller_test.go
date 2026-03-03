@@ -141,13 +141,16 @@ func TestGatusAlertingConfigReconciler_InvalidConfig_MissingFields(t *testing.T)
 		t.Errorf("expected 'webhook-url' in condition message, got: %s", validCond.Message)
 	}
 
-	// alerting.yaml must NOT have been written.
+	// alerting.yaml is still written (aggregation runs) but the invalid config must
+	// be excluded from the output.
 	updatedSecret := &corev1.Secret{}
 	if err := fakeClient.Get(ctx, types.NamespacedName{Name: "gatus-secrets", Namespace: "gatus"}, updatedSecret); err != nil {
 		t.Fatalf("Secret not found: %v", err)
 	}
-	if _, ok := updatedSecret.Data[alertingKey]; ok {
-		t.Error("alerting.yaml should NOT be written for invalid config")
+	if raw, ok := updatedSecret.Data[alertingKey]; ok {
+		if contains(string(raw), "webhook-url") {
+			t.Error("alerting.yaml should NOT contain the invalid config")
+		}
 	}
 }
 
@@ -418,5 +421,154 @@ func TestGatusAlertingConfigReconciler_ConfigSecretRef_MissingSecret_Requeues(t 
 	}
 	if result.RequeueAfter == 0 {
 		t.Error("expected a non-zero RequeueAfter when configSecretRef Secret is missing")
+	}
+}
+
+// TestGatusAlertingConfigReconciler_DeletedConfigRemovedFromSecret verifies that
+// deleting a GatusAlertingConfig removes it from alerting.yaml after reconciliation.
+func TestGatusAlertingConfigReconciler_DeletedConfigRemovedFromSecret(t *testing.T) {
+	ctx := context.Background()
+	s := newTestScheme(t)
+
+	outputSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "gatus-secrets", Namespace: "gatus"}}
+	cfg := makeAlertingConfig("slack-cfg", "default", "slack", map[string]interface{}{
+		"webhook-url": "https://hooks.slack.com/test",
+	})
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(s).
+		WithObjects(outputSecret, cfg).
+		WithStatusSubresource(&monitoringv1alpha1.GatusAlertingConfig{}).
+		Build()
+
+	r := &GatusAlertingConfigReconciler{
+		Client:              fakeClient,
+		TargetNamespace:     "gatus",
+		SecretName:          "gatus-secrets",
+		ControllerNamespace: "controller-ns",
+	}
+
+	// Create
+	_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "slack-cfg", Namespace: "default"}})
+	if err != nil {
+		t.Fatalf("Reconcile returned error: %v", err)
+	}
+
+	secret := &corev1.Secret{}
+	_ = fakeClient.Get(ctx, types.NamespacedName{Name: "gatus-secrets", Namespace: "gatus"}, secret)
+	if !contains(string(secret.Data["alerting.yaml"]), "slack") {
+		t.Fatal("expected slack in alerting.yaml before deletion")
+	}
+
+	// Delete
+	if err := fakeClient.Delete(ctx, cfg); err != nil {
+		t.Fatalf("failed to delete config: %v", err)
+	}
+
+	// Reconcile again (triggered by delete)
+	_, err = r.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "slack-cfg", Namespace: "default"}})
+	if err != nil {
+		t.Fatalf("Reconcile after delete returned error: %v", err)
+	}
+
+	_ = fakeClient.Get(ctx, types.NamespacedName{Name: "gatus-secrets", Namespace: "gatus"}, secret)
+	if contains(string(secret.Data["alerting.yaml"]), "hooks.slack.com") {
+		t.Errorf("expected slack config to be removed after deletion, got:\n%s", string(secret.Data["alerting.yaml"]))
+	}
+}
+
+// TestGatusAlertingConfigReconciler_UpdateReflected verifies that updating a
+// GatusAlertingConfig webhook-url is reflected in alerting.yaml after reconciliation.
+func TestGatusAlertingConfigReconciler_UpdateReflected(t *testing.T) {
+	ctx := context.Background()
+	s := newTestScheme(t)
+
+	outputSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "gatus-secrets", Namespace: "gatus"}}
+	cfg := makeAlertingConfig("slack-cfg", "default", "slack", map[string]interface{}{
+		"webhook-url": "https://hooks.slack.com/original",
+	})
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(s).
+		WithObjects(outputSecret, cfg).
+		WithStatusSubresource(&monitoringv1alpha1.GatusAlertingConfig{}).
+		Build()
+
+	r := &GatusAlertingConfigReconciler{
+		Client:              fakeClient,
+		TargetNamespace:     "gatus",
+		SecretName:          "gatus-secrets",
+		ControllerNamespace: "controller-ns",
+	}
+
+	_, _ = r.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "slack-cfg", Namespace: "default"}})
+
+	// Re-fetch after reconciliation (status update changes resourceVersion).
+	if err := fakeClient.Get(ctx, types.NamespacedName{Name: "slack-cfg", Namespace: "default"}, cfg); err != nil {
+		t.Fatalf("failed to re-fetch config: %v", err)
+	}
+
+	// Update
+	cfg.Spec.Config["webhook-url"] = mustJSON("https://hooks.slack.com/updated")
+	if err := fakeClient.Update(ctx, cfg); err != nil {
+		t.Fatalf("failed to update config: %v", err)
+	}
+
+	_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "slack-cfg", Namespace: "default"}})
+	if err != nil {
+		t.Fatalf("Reconcile after update returned error: %v", err)
+	}
+
+	secret := &corev1.Secret{}
+	_ = fakeClient.Get(ctx, types.NamespacedName{Name: "gatus-secrets", Namespace: "gatus"}, secret)
+	y := string(secret.Data["alerting.yaml"])
+	if !contains(y, "hooks.slack.com/updated") {
+		t.Errorf("expected updated webhook-url in alerting.yaml, got:\n%s", y)
+	}
+}
+
+// TestGatusAlertingConfigReconciler_DeterministicOutput verifies that the alerting.yaml
+// output is deterministic regardless of map iteration order.
+func TestGatusAlertingConfigReconciler_DeterministicOutput(t *testing.T) {
+	ctx := context.Background()
+	s := newTestScheme(t)
+
+	outputSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "gatus-secrets", Namespace: "gatus"}}
+	slack := makeAlertingConfig("slack-cfg", "default", "slack", map[string]interface{}{
+		"webhook-url": "https://hooks.slack.com/test",
+	})
+	discord := makeAlertingConfig("discord-cfg", "default", "discord", map[string]interface{}{
+		"webhook-url": "https://discord.com/api/webhooks/test",
+	})
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(s).
+		WithObjects(outputSecret, slack, discord).
+		WithStatusSubresource(&monitoringv1alpha1.GatusAlertingConfig{}).
+		Build()
+
+	r := &GatusAlertingConfigReconciler{
+		Client:              fakeClient,
+		TargetNamespace:     "gatus",
+		SecretName:          "gatus-secrets",
+		ControllerNamespace: "controller-ns",
+	}
+
+	// Run multiple times and verify output is identical
+	var results []string
+	for i := 0; i < 5; i++ {
+		_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "slack-cfg", Namespace: "default"}})
+		if err != nil {
+			t.Fatalf("Reconcile returned error: %v", err)
+		}
+		secret := &corev1.Secret{}
+		_ = fakeClient.Get(ctx, types.NamespacedName{Name: "gatus-secrets", Namespace: "gatus"}, secret)
+		results = append(results, string(secret.Data["alerting.yaml"]))
+	}
+
+	for i := 1; i < len(results); i++ {
+		if results[i] != results[0] {
+			t.Errorf("alerting.yaml output is non-deterministic:\nrun 0:\n%s\nrun %d:\n%s", results[0], i, results[i])
+		}
 	}
 }

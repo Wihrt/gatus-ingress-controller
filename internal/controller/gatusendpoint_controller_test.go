@@ -740,3 +740,98 @@ func TestGatusEndpointReconciler_ConflictDeduplication(t *testing.T) {
 		t.Errorf("expected only one 'shared-name' entry, got:\n%s", y)
 	}
 }
+
+// TestGatusEndpointReconciler_DeletedEndpointRemovedFromSecret verifies that when a
+// GatusEndpoint is deleted, the reconciler re-aggregates and the endpoint is no longer
+// present in endpoints.yaml.
+func TestGatusEndpointReconciler_DeletedEndpointRemovedFromSecret(t *testing.T) {
+	ctx := context.Background()
+	s := newTestScheme(t)
+
+	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "gatus-secrets", Namespace: "gatus"}}
+	ep := &monitoringv1alpha1.GatusEndpoint{
+		ObjectMeta: metav1.ObjectMeta{Name: "to-delete", Namespace: "default"},
+		Spec: monitoringv1alpha1.GatusEndpointSpec{
+			Name:       "Deletable Service",
+			URL:        "https://delete-me.example.com",
+			Conditions: []string{"[STATUS] == 200"},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(secret, ep).Build()
+	r := &GatusEndpointReconciler{Client: fakeClient, Scheme: s, TargetNamespace: "gatus", SecretName: "gatus-secrets"}
+
+	// Create
+	_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "to-delete", Namespace: "default"}})
+	if err != nil {
+		t.Fatalf("Reconcile returned error: %v", err)
+	}
+
+	updated := &corev1.Secret{}
+	_ = fakeClient.Get(ctx, types.NamespacedName{Name: "gatus-secrets", Namespace: "gatus"}, updated)
+	if !contains(string(updated.Data["endpoints.yaml"]), "Deletable Service") {
+		t.Fatal("expected endpoint to be present before deletion")
+	}
+
+	// Delete the CR
+	if err := fakeClient.Delete(ctx, ep); err != nil {
+		t.Fatalf("failed to delete endpoint: %v", err)
+	}
+
+	// Reconcile again (triggered by delete event)
+	_, err = r.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "to-delete", Namespace: "default"}})
+	if err != nil {
+		t.Fatalf("Reconcile after delete returned error: %v", err)
+	}
+
+	_ = fakeClient.Get(ctx, types.NamespacedName{Name: "gatus-secrets", Namespace: "gatus"}, updated)
+	if contains(string(updated.Data["endpoints.yaml"]), "Deletable Service") {
+		t.Errorf("expected endpoint to be removed after deletion, got:\n%s", string(updated.Data["endpoints.yaml"]))
+	}
+}
+
+// TestGatusEndpointReconciler_UpdateReflectedInSecret verifies that updating a
+// GatusEndpoint spec is reflected in the Secret after reconciliation.
+func TestGatusEndpointReconciler_UpdateReflectedInSecret(t *testing.T) {
+	ctx := context.Background()
+	s := newTestScheme(t)
+
+	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "gatus-secrets", Namespace: "gatus"}}
+	ep := &monitoringv1alpha1.GatusEndpoint{
+		ObjectMeta: metav1.ObjectMeta{Name: "updatable-ep", Namespace: "default"},
+		Spec: monitoringv1alpha1.GatusEndpointSpec{
+			Name:       "Original Name",
+			URL:        "https://original.example.com",
+			Conditions: []string{"[STATUS] == 200"},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(secret, ep).Build()
+	r := &GatusEndpointReconciler{Client: fakeClient, Scheme: s, TargetNamespace: "gatus", SecretName: "gatus-secrets"}
+
+	// Initial reconcile
+	_, _ = r.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "updatable-ep", Namespace: "default"}})
+
+	// Update the CR
+	ep.Spec.URL = "https://updated.example.com"
+	ep.Spec.Name = "Updated Name"
+	if err := fakeClient.Update(ctx, ep); err != nil {
+		t.Fatalf("failed to update endpoint: %v", err)
+	}
+
+	// Reconcile again
+	_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "updatable-ep", Namespace: "default"}})
+	if err != nil {
+		t.Fatalf("Reconcile after update returned error: %v", err)
+	}
+
+	updated := &corev1.Secret{}
+	_ = fakeClient.Get(ctx, types.NamespacedName{Name: "gatus-secrets", Namespace: "gatus"}, updated)
+	y := string(updated.Data["endpoints.yaml"])
+	if !contains(y, "updated.example.com") {
+		t.Errorf("expected updated URL in endpoints.yaml, got:\n%s", y)
+	}
+	if !contains(y, "Updated Name") {
+		t.Errorf("expected updated name in endpoints.yaml, got:\n%s", y)
+	}
+}
