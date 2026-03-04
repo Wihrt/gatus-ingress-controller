@@ -24,7 +24,7 @@ func newEndpointTestScheme(t *testing.T) *fake.ClientBuilder {
 }
 
 // TestGatusEndpointReconciler_WritesConfigMap verifies the basic happy path:
-// all GatusEndpoint CRs are written into the ConfigMap under endpoints.yaml.
+// all GatusEndpoint CRs are written into the Secret under endpoints.yaml.
 func TestGatusEndpointReconciler_WritesConfigMap(t *testing.T) {
 	ctx := context.Background()
 	s := newTestScheme(t)
@@ -80,7 +80,7 @@ func TestGatusEndpointReconciler_WritesConfigMap(t *testing.T) {
 }
 
 // TestGatusEndpointReconciler_RequeuesWhenConfigMapMissing verifies that reconciliation
-// is requeued (not errored) when the target ConfigMap does not exist yet.
+// is requeued (not errored) when the target Secret does not exist yet.
 func TestGatusEndpointReconciler_RequeuesWhenConfigMapMissing(t *testing.T) {
 	ctx := context.Background()
 	s := newTestScheme(t)
@@ -98,7 +98,7 @@ func TestGatusEndpointReconciler_RequeuesWhenConfigMapMissing(t *testing.T) {
 
 	fakeClient := fake.NewClientBuilder().
 		WithScheme(s).
-		WithObjects(ep). // No Secret — intentionally absent. // No ConfigMap — intentionally absent.
+		WithObjects(ep). // No Secret — intentionally absent.
 		Build()
 
 	r := &GatusEndpointReconciler{
@@ -171,38 +171,33 @@ func TestGatusEndpointReconciler_DefaultCondition(t *testing.T) {
 	}
 }
 
-// TestGatusEndpointReconciler_ResolvesAlertRef verifies that when a GatusEndpoint
-// references an existing GatusAlert, the resolved alert appears in endpoints.yaml.
-func TestGatusEndpointReconciler_ResolvesAlertRef(t *testing.T) {
+// TestGatusEndpointReconciler_InlineAlert verifies that a GatusEndpoint with an
+// inline alert configuration produces the correct alert block in endpoints.yaml.
+func TestGatusEndpointReconciler_InlineAlert(t *testing.T) {
 	ctx := context.Background()
 	s := newTestScheme(t)
-
-	alert := &monitoringv1alpha1.GatusAlert{
-		ObjectMeta: metav1.ObjectMeta{Name: "slack-alert", Namespace: "default"},
-		Spec: monitoringv1alpha1.GatusAlertSpec{
-			AlertingConfigRef: "slack-config",
-			FailureThreshold:  3,
-			SuccessThreshold:  2,
-		},
-	}
-	alertingCfg := &monitoringv1alpha1.GatusAlertingConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "slack-config", Namespace: "default"},
-		Spec:       monitoringv1alpha1.GatusAlertingConfigSpec{Type: "slack"},
-	}
+	trueVal := true
 
 	ep := &monitoringv1alpha1.GatusEndpoint{
 		ObjectMeta: metav1.ObjectMeta{Name: "my-ep", Namespace: "default"},
 		Spec: monitoringv1alpha1.GatusEndpointSpec{
 			Name: "My EP",
 			URL:  "https://example.com",
-			Alerts: []monitoringv1alpha1.GatusAlertRef{
-				{Name: "slack-alert"}, // no namespace → defaults to endpoint namespace
+			Alerts: []monitoringv1alpha1.GatusAlertSpec{
+				{
+					Type:             "slack",
+					Enabled:          &trueVal,
+					FailureThreshold: 3,
+					SuccessThreshold: 2,
+					SendOnResolved:   &trueVal,
+					Description:      "endpoint down",
+				},
 			},
 		},
 	}
 
 	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "gatus-secrets", Namespace: "gatus"}}
-	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(secret, alert, alertingCfg, ep).Build()
+	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(secret, ep).Build()
 	r := &GatusEndpointReconciler{Client: fakeClient, Scheme: s, TargetNamespace: "gatus", SecretName: "gatus-secrets"}
 
 	_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "my-ep", Namespace: "default"}})
@@ -212,50 +207,40 @@ func TestGatusEndpointReconciler_ResolvesAlertRef(t *testing.T) {
 
 	updatedSecret := &corev1.Secret{}
 	_ = fakeClient.Get(ctx, types.NamespacedName{Name: "gatus-secrets", Namespace: "gatus"}, updatedSecret)
-	yaml := string(updatedSecret.Data["endpoints.yaml"])
+	y := string(updatedSecret.Data["endpoints.yaml"])
 
-	if !contains(yaml, "type: slack") {
-		t.Errorf("expected 'type: slack' in endpoints.yaml, got:\n%s", yaml)
+	checks := map[string]string{
+		"type: slack":              "alert type",
+		"failure-threshold: 3":    "failure-threshold",
+		"success-threshold: 2":    "success-threshold",
+		"send-on-resolved: true":  "send-on-resolved",
+		"description: endpoint d": "description",
+	}
+	for substr, label := range checks {
+		if !contains(y, substr) {
+			t.Errorf("expected %s (%q) in endpoints.yaml, got:\n%s", label, substr, y)
+		}
 	}
 }
 
-// TestGatusEndpointReconciler_AlertRefOverrides verifies that all per-endpoint overrides
-// on a GatusAlertRef are applied correctly over the GatusAlert defaults.
-func TestGatusEndpointReconciler_AlertRefOverrides(t *testing.T) {
+// TestGatusEndpointReconciler_InlineAlertOverrides verifies that all inline alert fields
+// including provider-override are rendered correctly in endpoints.yaml.
+func TestGatusEndpointReconciler_InlineAlertOverrides(t *testing.T) {
 	ctx := context.Background()
 	s := newTestScheme(t)
 	falseVal := false
 	trueVal := true
 
-	alert := &monitoringv1alpha1.GatusAlert{
-		ObjectMeta: metav1.ObjectMeta{Name: "pagerduty-alert", Namespace: "default"},
-		Spec: monitoringv1alpha1.GatusAlertSpec{
-			AlertingConfigRef:       "pagerduty-config",
-			Enabled:                 true,
-			Description:             "default description",
-			FailureThreshold:        3,
-			SuccessThreshold:        2,
-			SendOnResolved:          false,
-			MinimumReminderInterval: "1h",
-		},
-	}
-	pagerdutyAlertingCfg := &monitoringv1alpha1.GatusAlertingConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "pagerduty-config", Namespace: "default"},
-		Spec:       monitoringv1alpha1.GatusAlertingConfigSpec{Type: "pagerduty"},
-	}
-
-	_ = falseVal
 	ep := &monitoringv1alpha1.GatusEndpoint{
 		ObjectMeta: metav1.ObjectMeta{Name: "override-ep", Namespace: "default"},
 		Spec: monitoringv1alpha1.GatusEndpointSpec{
 			Name: "Override EP",
 			URL:  "https://example.com",
-			Alerts: []monitoringv1alpha1.GatusAlertRef{
+			Alerts: []monitoringv1alpha1.GatusAlertSpec{
 				{
-					Name:                    "pagerduty-alert",
-					Namespace:               "default",
-					Description:             "endpoint-specific description",
+					Type:                    "pagerduty",
 					Enabled:                 &falseVal,
+					Description:             "endpoint-specific description",
 					FailureThreshold:        7,
 					SuccessThreshold:        5,
 					SendOnResolved:          &trueVal,
@@ -266,7 +251,7 @@ func TestGatusEndpointReconciler_AlertRefOverrides(t *testing.T) {
 	}
 
 	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "gatus-secrets", Namespace: "gatus"}}
-	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(secret, alert, pagerdutyAlertingCfg, ep).Build()
+	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(secret, ep).Build()
 	r := &GatusEndpointReconciler{Client: fakeClient, Scheme: s, TargetNamespace: "gatus", SecretName: "gatus-secrets"}
 
 	_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "override-ep", Namespace: "default"}})
@@ -274,9 +259,9 @@ func TestGatusEndpointReconciler_AlertRefOverrides(t *testing.T) {
 		t.Fatalf("Reconcile returned error: %v", err)
 	}
 
-	updatedSecret3 := &corev1.Secret{}
-	_ = fakeClient.Get(ctx, types.NamespacedName{Name: "gatus-secrets", Namespace: "gatus"}, updatedSecret3)
-	y := string(updatedSecret3.Data["endpoints.yaml"])
+	updatedSecret := &corev1.Secret{}
+	_ = fakeClient.Get(ctx, types.NamespacedName{Name: "gatus-secrets", Namespace: "gatus"}, updatedSecret)
+	y := string(updatedSecret.Data["endpoints.yaml"])
 
 	checks := map[string]string{
 		"type: pagerduty":                "alert type",
@@ -285,15 +270,12 @@ func TestGatusEndpointReconciler_AlertRefOverrides(t *testing.T) {
 		"success-threshold: 5":           "overridden success-threshold",
 		"send-on-resolved: true":         "overridden send-on-resolved",
 		"minimum-reminder-interval: 30m": "overridden minimum-reminder-interval",
+		"enabled: false":                 "enabled=false override",
 	}
 	for substr, label := range checks {
 		if !contains(y, substr) {
 			t.Errorf("expected %s (%q) in endpoints.yaml, got:\n%s", label, substr, y)
 		}
-	}
-	// The Enabled=false override: field should not appear (omitempty when false).
-	if contains(y, "default description") {
-		t.Errorf("default description should be overridden, got:\n%s", y)
 	}
 }
 
@@ -354,32 +336,6 @@ func TestGatusEndpointReconciler_WithClientConfig(t *testing.T) {
 	}
 }
 
-// TestUpsertConfigMapKey_NilData verifies that upsertConfigMapKey handles a ConfigMap
-// where the Data map is nil (initializing it before writing the key).
-func TestUpsertConfigMapKey_NilData(t *testing.T) {
-	ctx := context.Background()
-	s := newTestScheme(t)
-
-	// ConfigMap exists but has no Data at all.
-	cm := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Name: "gatus-config", Namespace: "gatus"},
-		// Data intentionally nil.
-	}
-	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(cm).Build()
-
-	result, err := upsertConfigMapKey(ctx, fakeClient, "gatus", "gatus-config", "test.yaml", "hello: world\n")
-	if err != nil {
-		t.Fatalf("upsertConfigMapKey returned error: %v", err)
-	}
-	_ = result
-
-	updated := &corev1.ConfigMap{}
-	_ = fakeClient.Get(ctx, types.NamespacedName{Name: "gatus-config", Namespace: "gatus"}, updated)
-	if updated.Data["test.yaml"] != "hello: world\n" {
-		t.Errorf("expected test.yaml to be written, got Data=%v", updated.Data)
-	}
-}
-
 func contains(s, substr string) bool {
 	return len(s) > 0 && len(substr) > 0 && (func() bool {
 		for i := 0; i <= len(s)-len(substr); i++ {
@@ -407,40 +363,33 @@ func makeAPIExtJSON(v interface{}) apiextv1.JSON {
 	return apiextv1.JSON{Raw: b}
 }
 
-// TestGatusEndpointReconciler_ProviderOverrideFromAlert verifies that
-// GatusAlertSpec.ProviderOverride is rendered in the endpoints.yaml output.
-func TestGatusEndpointReconciler_ProviderOverrideFromAlert(t *testing.T) {
+// TestGatusEndpointReconciler_ProviderOverride verifies that inline
+// ProviderOverride is rendered in the endpoints.yaml output.
+func TestGatusEndpointReconciler_ProviderOverride(t *testing.T) {
 	ctx := context.Background()
 	s := newTestScheme(t)
-
-	alert := &monitoringv1alpha1.GatusAlert{
-		ObjectMeta: metav1.ObjectMeta{Name: "slack-override", Namespace: "default"},
-		Spec: monitoringv1alpha1.GatusAlertSpec{
-			AlertingConfigRef: "slack-config",
-			FailureThreshold:  2,
-			ProviderOverride: map[string]apiextv1.JSON{
-				"username": makeAPIExtJSON("e2e-bot"),
-			},
-		},
-	}
-	slackAlertingCfg := &monitoringv1alpha1.GatusAlertingConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "slack-config", Namespace: "default"},
-		Spec:       monitoringv1alpha1.GatusAlertingConfigSpec{Type: "slack"},
-	}
+	trueVal := true
 
 	ep := &monitoringv1alpha1.GatusEndpoint{
 		ObjectMeta: metav1.ObjectMeta{Name: "override-ep", Namespace: "default"},
 		Spec: monitoringv1alpha1.GatusEndpointSpec{
 			Name: "Override EP",
 			URL:  "https://example.com",
-			Alerts: []monitoringv1alpha1.GatusAlertRef{
-				{Name: "slack-override"},
+			Alerts: []monitoringv1alpha1.GatusAlertSpec{
+				{
+					Type:             "slack",
+					Enabled:          &trueVal,
+					FailureThreshold: 2,
+					ProviderOverride: map[string]apiextv1.JSON{
+						"username": makeAPIExtJSON("e2e-bot"),
+					},
+				},
 			},
 		},
 	}
 
 	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "gatus-secrets", Namespace: "gatus"}}
-	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(secret, alert, slackAlertingCfg, ep).Build()
+	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(secret, ep).Build()
 	r := &GatusEndpointReconciler{Client: fakeClient, Scheme: s, TargetNamespace: "gatus", SecretName: "gatus-secrets"}
 
 	_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "override-ep", Namespace: "default"}})
@@ -615,19 +564,17 @@ func TestGatusEndpointReconciler_WithMaintenanceWindows(t *testing.T) {
 	}
 }
 
-// TestGatusEndpointReconciler_MissingAlertRef verifies that a missing GatusAlert ref is gracefully skipped.
-func TestGatusEndpointReconciler_MissingAlertRef(t *testing.T) {
+// TestGatusEndpointReconciler_NoAlerts verifies that an endpoint without alerts
+// does not produce an alerts block in the output.
+func TestGatusEndpointReconciler_NoAlerts(t *testing.T) {
 	ctx := context.Background()
 	s := newTestScheme(t)
 
 	ep := &monitoringv1alpha1.GatusEndpoint{
-		ObjectMeta: metav1.ObjectMeta{Name: "missing-alert-ep", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "no-alerts-ep", Namespace: "default"},
 		Spec: monitoringv1alpha1.GatusEndpointSpec{
-			Name: "Missing Alert EP",
+			Name: "No Alerts EP",
 			URL:  "https://example.com",
-			Alerts: []monitoringv1alpha1.GatusAlertRef{
-				{Name: "nonexistent-alert"},
-			},
 		},
 	}
 
@@ -635,66 +582,20 @@ func TestGatusEndpointReconciler_MissingAlertRef(t *testing.T) {
 	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(secret, ep).Build()
 	r := &GatusEndpointReconciler{Client: fakeClient, Scheme: s, TargetNamespace: "gatus", SecretName: "gatus-secrets"}
 
-	_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "missing-alert-ep", Namespace: "default"}})
+	_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "no-alerts-ep", Namespace: "default"}})
 	if err != nil {
-		t.Fatalf("Reconcile should not error on missing alert ref, got: %v", err)
+		t.Fatalf("Reconcile returned error: %v", err)
 	}
 
 	updated := &corev1.Secret{}
 	_ = fakeClient.Get(ctx, types.NamespacedName{Name: "gatus-secrets", Namespace: "gatus"}, updated)
 	y := string(updated.Data["endpoints.yaml"])
 
-	// Endpoint should be written but without any alerts
-	if !contains(y, "Missing Alert EP") {
-		t.Errorf("expected endpoint to still be written, got:\n%s", y)
+	if !contains(y, "No Alerts EP") {
+		t.Errorf("expected endpoint to be written, got:\n%s", y)
 	}
 	if contains(y, "alerts:") {
-		t.Errorf("expected no alerts block when ref is missing, got:\n%s", y)
-	}
-}
-
-// TestGatusEndpointReconciler_MissingAlertingConfigRef verifies that a missing GatusAlertingConfig ref is gracefully skipped.
-func TestGatusEndpointReconciler_MissingAlertingConfigRef(t *testing.T) {
-	ctx := context.Background()
-	s := newTestScheme(t)
-
-	alert := &monitoringv1alpha1.GatusAlert{
-		ObjectMeta: metav1.ObjectMeta{Name: "orphan-alert", Namespace: "default"},
-		Spec: monitoringv1alpha1.GatusAlertSpec{
-			AlertingConfigRef: "nonexistent-config",
-			FailureThreshold:  3,
-		},
-	}
-
-	ep := &monitoringv1alpha1.GatusEndpoint{
-		ObjectMeta: metav1.ObjectMeta{Name: "orphan-ep", Namespace: "default"},
-		Spec: monitoringv1alpha1.GatusEndpointSpec{
-			Name: "Orphan EP",
-			URL:  "https://example.com",
-			Alerts: []monitoringv1alpha1.GatusAlertRef{
-				{Name: "orphan-alert"},
-			},
-		},
-	}
-
-	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "gatus-secrets", Namespace: "gatus"}}
-	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(secret, alert, ep).Build()
-	r := &GatusEndpointReconciler{Client: fakeClient, Scheme: s, TargetNamespace: "gatus", SecretName: "gatus-secrets"}
-
-	_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "orphan-ep", Namespace: "default"}})
-	if err != nil {
-		t.Fatalf("Reconcile should not error on missing alerting config ref, got: %v", err)
-	}
-
-	updated := &corev1.Secret{}
-	_ = fakeClient.Get(ctx, types.NamespacedName{Name: "gatus-secrets", Namespace: "gatus"}, updated)
-	y := string(updated.Data["endpoints.yaml"])
-
-	if !contains(y, "Orphan EP") {
-		t.Errorf("expected endpoint to still be written, got:\n%s", y)
-	}
-	if contains(y, "alerts:") {
-		t.Errorf("expected no alerts block when alerting config ref is missing, got:\n%s", y)
+		t.Errorf("expected no alerts block when none specified, got:\n%s", y)
 	}
 }
 
@@ -723,7 +624,6 @@ func TestGatusEndpointReconciler_ConflictDeduplication(t *testing.T) {
 	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(secret, ep1, ep2).Build()
 	r := &GatusEndpointReconciler{Client: fakeClient, Scheme: s, TargetNamespace: "gatus", SecretName: "gatus-secrets"}
 
-	// Reconcile aaa-ep first
 	_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "aaa-ep", Namespace: "default"}})
 	if err != nil {
 		t.Fatalf("Reconcile aaa-ep returned error: %v", err)
@@ -833,5 +733,45 @@ func TestGatusEndpointReconciler_UpdateReflectedInSecret(t *testing.T) {
 	}
 	if !contains(y, "Updated Name") {
 		t.Errorf("expected updated name in endpoints.yaml, got:\n%s", y)
+	}
+}
+
+// TestGatusEndpointReconciler_MultipleAlertTypes verifies that multiple inline alerts
+// with different types are all rendered in the endpoints.yaml output.
+func TestGatusEndpointReconciler_MultipleAlertTypes(t *testing.T) {
+	ctx := context.Background()
+	s := newTestScheme(t)
+	trueVal := true
+
+	ep := &monitoringv1alpha1.GatusEndpoint{
+		ObjectMeta: metav1.ObjectMeta{Name: "multi-alert-ep", Namespace: "default"},
+		Spec: monitoringv1alpha1.GatusEndpointSpec{
+			Name: "Multi Alert EP",
+			URL:  "https://example.com",
+			Alerts: []monitoringv1alpha1.GatusAlertSpec{
+				{Type: "slack", Enabled: &trueVal, FailureThreshold: 3},
+				{Type: "discord", Enabled: &trueVal, FailureThreshold: 5},
+				{Type: "pagerduty", Enabled: &trueVal, FailureThreshold: 1},
+			},
+		},
+	}
+
+	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "gatus-secrets", Namespace: "gatus"}}
+	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(secret, ep).Build()
+	r := &GatusEndpointReconciler{Client: fakeClient, Scheme: s, TargetNamespace: "gatus", SecretName: "gatus-secrets"}
+
+	_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "multi-alert-ep", Namespace: "default"}})
+	if err != nil {
+		t.Fatalf("Reconcile returned error: %v", err)
+	}
+
+	updatedSecret := &corev1.Secret{}
+	_ = fakeClient.Get(ctx, types.NamespacedName{Name: "gatus-secrets", Namespace: "gatus"}, updatedSecret)
+	y := string(updatedSecret.Data["endpoints.yaml"])
+
+	for _, alertType := range []string{"slack", "discord", "pagerduty"} {
+		if !contains(y, "type: "+alertType) {
+			t.Errorf("expected 'type: %s' in endpoints.yaml, got:\n%s", alertType, y)
+		}
 	}
 }

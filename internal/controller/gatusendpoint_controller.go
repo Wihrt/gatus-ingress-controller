@@ -2,12 +2,13 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 
 	"gopkg.in/yaml.v3"
+	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -117,7 +118,7 @@ type gatusMaintenanceWinYAML struct {
 	Timezone string   `yaml:"timezone,omitempty"`
 }
 
-// Reconcile aggregates all GatusEndpoints and writes endpoints.yaml to the target ConfigMap.
+// Reconcile aggregates all GatusEndpoints and writes endpoints.yaml to the target Secret.
 func (r *GatusEndpointReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 	logger.Info("Reconciling GatusEndpoint", "name", req.Name, "namespace", req.Namespace)
@@ -136,7 +137,6 @@ func (r *GatusEndpointReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	})
 
 	// Deduplicate by spec.name: first alphabetically wins; log a warning for conflicts.
-	// Iterate over the already-sorted list to preserve deterministic output order.
 	seenNames := make(map[string]string, len(endpointList.Items)) // spec.name -> namespace/name of keeper
 	var endpoints []gatusEndpointYAML
 	for _, ep := range endpointList.Items {
@@ -148,10 +148,8 @@ func (r *GatusEndpointReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			continue
 		}
 		seenNames[ep.Spec.Name] = ep.Namespace + "/" + ep.Name
-		alertYAMLs, err := r.resolveAlerts(ctx, ep.Spec.Alerts, ep.Namespace)
-		if err != nil {
-			logger.Error(err, "Failed to resolve alerts for endpoint", "name", ep.Name)
-		}
+
+		alertYAMLs := convertAlerts(ep.Spec.Alerts)
 
 		conditions := ep.Spec.Conditions
 		if len(conditions) == 0 {
@@ -225,73 +223,41 @@ func (r *GatusEndpointReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	return upsertSecretKey(ctx, r.Client, r.TargetNamespace, r.SecretName, endpointsKey, string(data))
 }
 
-// resolveAlerts looks up each GatusAlertRef and merges its overrides with the referenced GatusAlert.
-func (r *GatusEndpointReconciler) resolveAlerts(ctx context.Context, refs []monitoringv1alpha1.GatusAlertRef, defaultNS string) ([]gatusAlertYAML, error) {
-	logger := log.FromContext(ctx)
+// convertAlerts converts inline GatusAlertSpec entries to YAML alert configs.
+func convertAlerts(alerts []monitoringv1alpha1.GatusAlertSpec) []gatusAlertYAML {
 	var out []gatusAlertYAML
-	for _, ref := range refs {
-		ns := ref.Namespace
-		if ns == "" {
-			ns = defaultNS
-		}
-		alert := &monitoringv1alpha1.GatusAlert{}
-		if err := r.Get(ctx, types.NamespacedName{Name: ref.Name, Namespace: ns}, alert); err != nil {
-			logger.Error(err, "Failed to get GatusAlert", "name", ref.Name, "namespace", ns)
-			continue
-		}
-
-		// Resolve provider type from the referenced GatusAlertingConfig.
-		alertingConfig := &monitoringv1alpha1.GatusAlertingConfig{}
-		if err := r.Get(ctx, types.NamespacedName{Name: alert.Spec.AlertingConfigRef, Namespace: ns}, alertingConfig); err != nil {
-			logger.Error(err, "Failed to get GatusAlertingConfig", "name", alert.Spec.AlertingConfigRef, "namespace", ns)
-			continue
-		}
-
+	for _, a := range alerts {
 		y := gatusAlertYAML{
-			Type:                    alertingConfig.Spec.Type,
-			Enabled:                 boolPtr(alert.Spec.Enabled),
-			Description:             alert.Spec.Description,
-			FailureThreshold:        alert.Spec.FailureThreshold,
-			SuccessThreshold:        alert.Spec.SuccessThreshold,
-			SendOnResolved:          boolPtr(alert.Spec.SendOnResolved),
-			MinimumReminderInterval: alert.Spec.MinimumReminderInterval,
+			Type:                    a.Type,
+			Enabled:                 a.Enabled,
+			Description:             a.Description,
+			FailureThreshold:        a.FailureThreshold,
+			SuccessThreshold:        a.SuccessThreshold,
+			SendOnResolved:          a.SendOnResolved,
+			MinimumReminderInterval: a.MinimumReminderInterval,
 		}
 
-		// Apply ProviderOverride from the GatusAlert spec.
-		if len(alert.Spec.ProviderOverride) > 0 {
-			if overrideMap, err := apiExtMapToInterface(alert.Spec.ProviderOverride); err != nil {
-				logger.Error(err, "Failed to parse alert ProviderOverride")
-			} else {
-				if y.ProviderOverride == nil {
-					y.ProviderOverride = make(map[string]interface{})
-				}
-				for k, v := range overrideMap {
-					y.ProviderOverride[k] = v
-				}
-			}
-		}
-		if ref.Description != "" {
-			y.Description = ref.Description
-		}
-		if ref.Enabled != nil {
-			y.Enabled = ref.Enabled
-		}
-		if ref.FailureThreshold != 0 {
-			y.FailureThreshold = ref.FailureThreshold
-		}
-		if ref.SuccessThreshold != 0 {
-			y.SuccessThreshold = ref.SuccessThreshold
-		}
-		if ref.SendOnResolved != nil {
-			y.SendOnResolved = ref.SendOnResolved
-		}
-		if ref.MinimumReminderInterval != "" {
-			y.MinimumReminderInterval = ref.MinimumReminderInterval
+		if len(a.ProviderOverride) > 0 {
+			overrideMap := apiExtMapToInterface(a.ProviderOverride)
+			y.ProviderOverride = overrideMap
 		}
 
 		out = append(out, y)
 	}
-	return out, nil
+	return out
+}
+
+// apiExtMapToInterface converts a map[string]apiextv1.JSON to map[string]interface{}.
+func apiExtMapToInterface(m map[string]apiextv1.JSON) map[string]interface{} {
+	out := make(map[string]interface{}, len(m))
+	for k, v := range m {
+		var val interface{}
+		if err := json.Unmarshal(v.Raw, &val); err != nil {
+			continue
+		}
+		out[k] = val
+	}
+	return out
 }
 
 func buildClientYAML(c *monitoringv1alpha1.GatusClientConfig) *gatusClientYAML {

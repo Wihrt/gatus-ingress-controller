@@ -40,20 +40,9 @@ func main() {
 		targetNamespace = "gatus"
 	}
 
-	configMapName := os.Getenv("CONFIG_MAP_NAME")
-	if configMapName == "" {
-		configMapName = "gatus-config"
-	}
-
 	secretName := os.Getenv("SECRET_NAME")
 	if secretName == "" {
 		secretName = "gatus-secrets"
-	}
-
-	controllerNamespace := os.Getenv("POD_NAMESPACE")
-	if controllerNamespace == "" {
-		setupLog.Error(nil, "POD_NAMESPACE env var is required (set via Downward API)")
-		os.Exit(1)
 	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
@@ -65,16 +54,9 @@ func main() {
 		LeaderElection:         false,
 		Cache: cache.Options{
 			ByObject: map[client.Object]cache.ByObject{
-				// Restrict Secret caching to only the namespaces the controller
-				// actually reads/writes, avoiding cluster-wide list/watch on secrets.
+				// Restrict Secret caching to only the target namespace,
+				// avoiding cluster-wide list/watch on secrets.
 				&corev1.Secret{}: {
-					Namespaces: map[string]cache.Config{
-						targetNamespace:     {},
-						controllerNamespace: {},
-					},
-				},
-				// Restrict ConfigMap caching to the target namespace only.
-				&corev1.ConfigMap{}: {
 					Namespaces: map[string]cache.Config{
 						targetNamespace: {},
 					},
@@ -84,32 +66,6 @@ func main() {
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
-		os.Exit(1)
-	}
-
-	if err = (&controller.GatusAlertingConfigReconciler{
-		Client:              mgr.GetClient(),
-		TargetNamespace:     targetNamespace,
-		SecretName:          secretName,
-		ControllerNamespace: controllerNamespace,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "GatusAlertingConfig")
-		os.Exit(1)
-	}
-
-	if err = (&controller.GatusAlertReconciler{
-		Client: mgr.GetClient(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "GatusAlert")
-		os.Exit(1)
-	}
-
-	if err = (&controller.GatusAnnouncementReconciler{
-		Client:          mgr.GetClient(),
-		TargetNamespace: targetNamespace,
-		ConfigMapName:   configMapName,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "GatusAnnouncement")
 		os.Exit(1)
 	}
 
@@ -142,26 +98,10 @@ func main() {
 	}
 
 	if err := ctrl.NewWebhookManagedBy(mgr).
-		For(&monitoringv1alpha1.GatusAlertingConfig{}).
-		WithValidator(&webhook.GatusAlertingConfigValidator{Client: mgr.GetClient()}).
-		Complete(); err != nil {
-		setupLog.Error(err, "unable to register webhook", "webhook", "GatusAlertingConfig")
-		os.Exit(1)
-	}
-
-	if err := ctrl.NewWebhookManagedBy(mgr).
 		For(&monitoringv1alpha1.GatusEndpoint{}).
 		WithValidator(&webhook.GatusEndpointValidator{}).
 		Complete(); err != nil {
 		setupLog.Error(err, "unable to register webhook", "webhook", "GatusEndpoint")
-		os.Exit(1)
-	}
-
-	if err := ctrl.NewWebhookManagedBy(mgr).
-		For(&monitoringv1alpha1.GatusAlert{}).
-		WithValidator(&webhook.GatusAlertValidator{Client: mgr.GetClient()}).
-		Complete(); err != nil {
-		setupLog.Error(err, "unable to register webhook", "webhook", "GatusAlert")
 		os.Exit(1)
 	}
 
