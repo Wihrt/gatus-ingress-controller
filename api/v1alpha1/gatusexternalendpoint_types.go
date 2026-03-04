@@ -34,9 +34,9 @@ type GatusExternalEndpointSpec struct {
 	// +kubebuilder:validation:Required
 	Token string `json:"token"`
 
-	// Alerts is the list of alert references for this external endpoint.
+	// Alerts is the list of alert configurations for this external endpoint.
 	// +optional
-	Alerts []GatusAlertRef `json:"alerts,omitempty"`
+	Alerts []GatusAlertSpec `json:"alerts,omitempty"`
 
 	// Heartbeat configures automatic failure detection when updates stop being received.
 	// +optional

@@ -38,13 +38,17 @@ jobs:
           files: coverage.out
           token: ${{ secrets.CODECOV_TOKEN }}
 
-  # ── Docker: build validation (no push) ───────────────────────────────────────
+  # ── Docker: build image and upload as artifact ──────────────────────────────
   docker:
     name: Docker build
     runs-on: ubuntu-latest
+    needs: go
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Build Docker image
         uses: docker/build-push-action@v6
@@ -52,24 +56,34 @@ jobs:
           context: .
           push: false
           tags: gatus-ingress-controller:ci-test
+          outputs: type=docker,dest=/tmp/image.tar
+
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image
+          path: /tmp/image.tar
+          retention-days: 1
 
   # ── E2E tests (Chainsaw) on k3s ──────────────────────────────────────────────
   e2e:
     name: E2E tests / Chainsaw (k3s)
     runs-on: ubuntu-latest
+    needs: docker
     env:
       IMAGE_REGISTRY: gatus-ingress-controller
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Build Docker image for e2e
-        uses: docker/build-push-action@v6
+      - name: Download Docker image artifact
+        uses: actions/download-artifact@v4
         with:
-          context: .
-          push: false
-          tags: gatus-ingress-controller:ci-test
-          load: true
+          name: docker-image
+          path: /tmp
+
+      - name: Load Docker image
+        run: docker load -i /tmp/image.tar
 
       - name: Install k3s
         run: |

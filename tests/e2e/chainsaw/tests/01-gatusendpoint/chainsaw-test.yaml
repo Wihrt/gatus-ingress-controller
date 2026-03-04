@@ -107,7 +107,53 @@ spec:
         - script:
             content: kubectl get secret gatus-secrets -n gatus -o jsonpath='{.data.endpoints\.yaml}' | base64 -d
 
-    # ── Step 4: Update an endpoint and verify the new URL appears ─────────────
+    # ── Step 4: Inline alert rendered in endpoints.yaml ──────────────────────
+    - name: "[GatusEndpoint] inline alert with type and overrides"
+      try:
+        - apply:
+            resource:
+              apiVersion: monitoring.gatus.io/v1alpha1
+              kind: GatusEndpoint
+              metadata:
+                name: test-alert-ep
+              spec:
+                name: "test-alert-app"
+                group: "e2e"
+                url: "https://alert-app.example.com"
+                conditions:
+                  - "[STATUS] == 200"
+                alerts:
+                  - type: slack
+                    enabled: true
+                    failureThreshold: 3
+                    successThreshold: 2
+                    sendOnResolved: true
+                    description: "e2e slack alert"
+                    providerOverride:
+                      webhook-url: "https://hooks.slack.com/test"
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: gatus-secrets
+                namespace: gatus
+              "(contains(base64_decode(lookup(data, 'endpoints.yaml')), 'type: slack'))": true
+              "(contains(base64_decode(lookup(data, 'endpoints.yaml')), 'failure-threshold: 3'))": true
+              "(contains(base64_decode(lookup(data, 'endpoints.yaml')), 'success-threshold: 2'))": true
+              "(contains(base64_decode(lookup(data, 'endpoints.yaml')), 'send-on-resolved: true'))": true
+              "(contains(base64_decode(lookup(data, 'endpoints.yaml')), 'e2e slack alert'))": true
+              "(contains(base64_decode(lookup(data, 'endpoints.yaml')), 'provider-override'))": true
+              "(contains(base64_decode(lookup(data, 'endpoints.yaml')), 'hooks.slack.com'))": true
+      catch:
+        - describe:
+            apiVersion: monitoring.gatus.io/v1alpha1
+            kind: GatusEndpoint
+            name: test-alert-ep
+        - script:
+            content: kubectl get secret gatus-secrets -n gatus -o jsonpath='{.data.endpoints\.yaml}' | base64 -d
+
+    # ── Step 5: Update an endpoint and verify the new URL appears ─────────────
     - name: "[GatusEndpoint] update URL is reflected in Secret"
       try:
         - apply:
@@ -138,7 +184,7 @@ spec:
         - script:
             content: kubectl get secret gatus-secrets -n gatus -o jsonpath='{.data.endpoints\.yaml}' | base64 -d
 
-    # ── Step 5: Delete an endpoint and verify it is removed from Secret ───────
+    # ── Step 6: Delete an endpoint and verify it is removed from Secret ───────
     - name: "[GatusEndpoint] deleted endpoint removed from Secret"
       try:
         - delete:
@@ -163,7 +209,7 @@ spec:
         - script:
             content: kubectl get secret gatus-secrets -n gatus -o jsonpath='{.data.endpoints\.yaml}' | base64 -d
 
-    # ── Step 6: Webhook rejects endpoint with unknown placeholder ────────────
+    # ── Step 7: Webhook rejects endpoint with unknown placeholder ────────────
     - name: "[GatusEndpoint] webhook rejects unknown condition placeholder"
       try:
         - error:

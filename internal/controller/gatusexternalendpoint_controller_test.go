@@ -2,7 +2,6 @@ package controller
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -123,40 +122,27 @@ func TestGatusExternalEndpointReconciler_WithHeartbeat(t *testing.T) {
 	}
 }
 
-// TestGatusExternalEndpointReconciler_MissingAlertRefGraceful verifies that when a CR
-// references a GatusAlert that does not exist, the reconciler logs the error but still
-// writes the external endpoint (without the missing alert) — no panic, no error returned.
-func TestGatusExternalEndpointReconciler_MissingAlertRefGraceful(t *testing.T) {
+// TestGatusExternalEndpointReconciler_NoAlerts verifies that when a CR has no alerts,
+// no alerts block is written in the output.
+func TestGatusExternalEndpointReconciler_NoAlerts(t *testing.T) {
 	s := newTestScheme(t)
 	ext := &monitoringv1alpha1.GatusExternalEndpoint{
-		ObjectMeta: metav1.ObjectMeta{Name: "svc-with-alert", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "no-alert-svc", Namespace: "default"},
 		Spec: monitoringv1alpha1.GatusExternalEndpointSpec{
-			Name:  "Service With Alert",
+			Name:  "No Alert Service",
 			Token: "tok-abc",
-			Alerts: []monitoringv1alpha1.GatusAlertRef{
-				{Name: "nonexistent-alert", Namespace: "default"},
-			},
 		},
 	}
 	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(extEndpointSecret(), ext).Build()
 	r := newExtEndpointReconciler(fakeClient)
-	// Must not error out.
-	reconcileExtEndpoint(t, r, "svc-with-alert", "default")
+	reconcileExtEndpoint(t, r, "no-alert-svc", "default")
 
-	out := getExternalEndpointsYAML(t, fakeClient)
-	endpoints, ok := out["external-endpoints"].([]interface{})
-	if !ok || len(endpoints) == 0 {
-		t.Fatalf("expected endpoint to be written even when alert ref is missing, got: %v", out["external-endpoints"])
-	}
-	entry := endpoints[0].(map[string]interface{})
-	if entry["name"] != "Service With Alert" {
-		t.Errorf("name = %v, want 'Service With Alert'", entry["name"])
-	}
-	// Alerts should be empty since the referenced alert doesn't exist.
-	if alerts, exists := entry["alerts"]; exists && alerts != nil {
-		if list, ok := alerts.([]interface{}); ok && len(list) > 0 {
-			t.Errorf("expected no alerts (missing ref), got: %v", alerts)
-		}
+	secret := &corev1.Secret{}
+	_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: "gatus-secrets", Namespace: "gatus"}, secret)
+	raw := string(secret.Data["external-endpoints.yaml"])
+
+	if contains(raw, "alerts:") {
+		t.Errorf("expected no alerts block, got:\n%s", raw)
 	}
 }
 
@@ -179,13 +165,11 @@ func TestGatusExternalEndpointReconciler_SpecialCharactersInToken(t *testing.T) 
 	_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: "gatus-secrets", Namespace: "gatus"}, secret)
 	raw := secret.Data["external-endpoints.yaml"]
 
-	// Must be valid YAML.
 	var out map[string]interface{}
 	if err := yaml.Unmarshal(raw, &out); err != nil {
 		t.Fatalf("external-endpoints.yaml with special token is not valid YAML: %v\ncontent:\n%s", err, raw)
 	}
 
-	// Token must round-trip correctly.
 	endpoints := out["external-endpoints"].([]interface{})
 	entry := endpoints[0].(map[string]interface{})
 	want := `tok:special"value'with\backslash`
@@ -194,35 +178,29 @@ func TestGatusExternalEndpointReconciler_SpecialCharactersInToken(t *testing.T) 
 	}
 }
 
-// TestGatusExternalEndpointReconciler_WithExistingAlertRef verifies that when a
-// GatusExternalEndpoint references an existing GatusAlert, the alert appears in the output.
-func TestGatusExternalEndpointReconciler_WithExistingAlertRef(t *testing.T) {
+// TestGatusExternalEndpointReconciler_WithInlineAlert verifies that when a
+// GatusExternalEndpoint has an inline alert, the alert appears in the output.
+func TestGatusExternalEndpointReconciler_WithInlineAlert(t *testing.T) {
 	s := newTestScheme(t)
-	alert := &monitoringv1alpha1.GatusAlert{
-		ObjectMeta: metav1.ObjectMeta{Name: "discord-alert", Namespace: "default"},
-		Spec: monitoringv1alpha1.GatusAlertSpec{
-			AlertingConfigRef: "discord-config",
-			FailureThreshold:  3,
-			SuccessThreshold:  2,
-		},
-	}
-	discordAlertingCfg := &monitoringv1alpha1.GatusAlertingConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "discord-config", Namespace: "default"},
-		Spec:       monitoringv1alpha1.GatusAlertingConfigSpec{Type: "discord"},
-	}
+	trueVal := true
 	ext := &monitoringv1alpha1.GatusExternalEndpoint{
-		ObjectMeta: metav1.ObjectMeta{Name: "ext-with-real-alert", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "ext-with-alert", Namespace: "default"},
 		Spec: monitoringv1alpha1.GatusExternalEndpointSpec{
-			Name:  "Ext With Real Alert",
+			Name:  "Ext With Alert",
 			Token: "tok-123",
-			Alerts: []monitoringv1alpha1.GatusAlertRef{
-				{Name: "discord-alert"}, // no namespace → defaults to ext namespace
+			Alerts: []monitoringv1alpha1.GatusAlertSpec{
+				{
+					Type:             "discord",
+					Enabled:          &trueVal,
+					FailureThreshold: 3,
+					SuccessThreshold: 2,
+				},
 			},
 		},
 	}
-	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(extEndpointSecret(), alert, discordAlertingCfg, ext).Build()
+	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(extEndpointSecret(), ext).Build()
 	r := newExtEndpointReconciler(fakeClient)
-	reconcileExtEndpoint(t, r, "ext-with-real-alert", "default")
+	reconcileExtEndpoint(t, r, "ext-with-alert", "default")
 
 	out := getExternalEndpointsYAML(t, fakeClient)
 	endpoints := out["external-endpoints"].([]interface{})
@@ -237,33 +215,20 @@ func TestGatusExternalEndpointReconciler_WithExistingAlertRef(t *testing.T) {
 	}
 }
 
-// TestGatusExternalEndpointReconciler_AlertRefOverrides verifies that per-endpoint
-// alert overrides on GatusAlertRef are applied over GatusAlert defaults.
-func TestGatusExternalEndpointReconciler_AlertRefOverrides(t *testing.T) {
+// TestGatusExternalEndpointReconciler_AlertOverrides verifies that all inline
+// alert fields are correctly rendered in the output.
+func TestGatusExternalEndpointReconciler_AlertOverrides(t *testing.T) {
 	s := newTestScheme(t)
 	trueVal := true
-	alert := &monitoringv1alpha1.GatusAlert{
-		ObjectMeta: metav1.ObjectMeta{Name: "teams-alert", Namespace: "default"},
-		Spec: monitoringv1alpha1.GatusAlertSpec{
-			AlertingConfigRef:       "teams-config",
-			FailureThreshold:        3,
-			SuccessThreshold:        2,
-			MinimumReminderInterval: "1h",
-		},
-	}
-	teamsAlertingCfg := &monitoringv1alpha1.GatusAlertingConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "teams-config", Namespace: "default"},
-		Spec:       monitoringv1alpha1.GatusAlertingConfigSpec{Type: "teams"},
-	}
 	ext := &monitoringv1alpha1.GatusExternalEndpoint{
 		ObjectMeta: metav1.ObjectMeta{Name: "ext-override", Namespace: "default"},
 		Spec: monitoringv1alpha1.GatusExternalEndpointSpec{
 			Name:  "Ext Override",
 			Token: "tok-456",
-			Alerts: []monitoringv1alpha1.GatusAlertRef{
+			Alerts: []monitoringv1alpha1.GatusAlertSpec{
 				{
-					Name:                    "teams-alert",
-					Namespace:               "default",
+					Type:                    "teams",
+					Enabled:                 &trueVal,
 					Description:             "custom description",
 					FailureThreshold:        9,
 					SuccessThreshold:        4,
@@ -273,7 +238,7 @@ func TestGatusExternalEndpointReconciler_AlertRefOverrides(t *testing.T) {
 			},
 		},
 	}
-	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(extEndpointSecret(), alert, teamsAlertingCfg, ext).Build()
+	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(extEndpointSecret(), ext).Build()
 	r := newExtEndpointReconciler(fakeClient)
 	reconcileExtEndpoint(t, r, "ext-override", "default")
 
@@ -283,11 +248,11 @@ func TestGatusExternalEndpointReconciler_AlertRefOverrides(t *testing.T) {
 
 	checks := map[string]string{
 		"type: teams":                    "alert type",
-		"description: custom":            "overridden description",
-		"failure-threshold: 9":           "overridden failure-threshold",
-		"success-threshold: 4":           "overridden success-threshold",
-		"send-on-resolved: true":         "overridden send-on-resolved",
-		"minimum-reminder-interval: 15m": "overridden minimum-reminder-interval",
+		"description: custom":            "description",
+		"failure-threshold: 9":           "failure-threshold",
+		"success-threshold: 4":           "success-threshold",
+		"send-on-resolved: true":         "send-on-resolved",
+		"minimum-reminder-interval: 15m": "minimum-reminder-interval",
 	}
 	for substr, label := range checks {
 		if !contains(raw, substr) {
@@ -317,36 +282,30 @@ func TestGatusExternalEndpointReconciler_RequeuesWhenSecretMissing(t *testing.T)
 	}
 }
 
-// TestGatusExternalEndpointReconciler_ProviderOverrideFromAlert verifies that
-// GatusAlertSpec.ProviderOverride is rendered in the external-endpoints.yaml output.
-func TestGatusExternalEndpointReconciler_ProviderOverrideFromAlert(t *testing.T) {
+// TestGatusExternalEndpointReconciler_ProviderOverride verifies that
+// ProviderOverride is rendered in the external-endpoints.yaml output.
+func TestGatusExternalEndpointReconciler_ProviderOverride(t *testing.T) {
 	s := newTestScheme(t)
+	trueVal := true
 
-	alert := &monitoringv1alpha1.GatusAlert{
-		ObjectMeta: metav1.ObjectMeta{Name: "teams-override", Namespace: "default"},
-		Spec: monitoringv1alpha1.GatusAlertSpec{
-			AlertingConfigRef: "teams-config",
-			FailureThreshold:  2,
-			ProviderOverride: map[string]apiextv1.JSON{
-				"webhook-url": {Raw: func() []byte { b, _ := json.Marshal("https://teams.example.com/webhook"); return b }()},
-			},
-		},
-	}
-	teamsAlertingCfg2 := &monitoringv1alpha1.GatusAlertingConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "teams-config", Namespace: "default"},
-		Spec:       monitoringv1alpha1.GatusAlertingConfigSpec{Type: "teams"},
-	}
 	ext := &monitoringv1alpha1.GatusExternalEndpoint{
 		ObjectMeta: metav1.ObjectMeta{Name: "ext-override", Namespace: "default"},
 		Spec: monitoringv1alpha1.GatusExternalEndpointSpec{
 			Name:  "Ext Override",
 			Token: "tok-override",
-			Alerts: []monitoringv1alpha1.GatusAlertRef{
-				{Name: "teams-override"},
+			Alerts: []monitoringv1alpha1.GatusAlertSpec{
+				{
+					Type:             "teams",
+					Enabled:          &trueVal,
+					FailureThreshold: 2,
+					ProviderOverride: map[string]apiextv1.JSON{
+						"webhook-url": makeAPIExtJSON("https://teams.example.com/webhook"),
+					},
+				},
 			},
 		},
 	}
-	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(extEndpointSecret(), alert, teamsAlertingCfg2, ext).Build()
+	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(extEndpointSecret(), ext).Build()
 	r := newExtEndpointReconciler(fakeClient)
 	reconcileExtEndpoint(t, r, "ext-override", "default")
 
@@ -376,7 +335,6 @@ func TestGatusExternalEndpointReconciler_DeletedEndpointRemoved(t *testing.T) {
 	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(extEndpointSecret(), ext).Build()
 	r := newExtEndpointReconciler(fakeClient)
 
-	// Create
 	reconcileExtEndpoint(t, r, "to-delete", "default")
 	out := getExternalEndpointsYAML(t, fakeClient)
 	endpoints := out["external-endpoints"].([]interface{})
@@ -384,12 +342,10 @@ func TestGatusExternalEndpointReconciler_DeletedEndpointRemoved(t *testing.T) {
 		t.Fatalf("expected 1 endpoint, got %d", len(endpoints))
 	}
 
-	// Delete
 	if err := fakeClient.Delete(context.Background(), ext); err != nil {
 		t.Fatalf("failed to delete external endpoint: %v", err)
 	}
 
-	// Reconcile again
 	reconcileExtEndpoint(t, r, "to-delete", "default")
 	out = getExternalEndpointsYAML(t, fakeClient)
 	endpoints = out["external-endpoints"].([]interface{})
@@ -414,7 +370,6 @@ func TestGatusExternalEndpointReconciler_UpdateTokenReflected(t *testing.T) {
 
 	reconcileExtEndpoint(t, r, "updatable-ext", "default")
 
-	// Update
 	ext.Spec.Token = "updated-token"
 	ext.Spec.Group = "new-group"
 	if err := fakeClient.Update(context.Background(), ext); err != nil {
@@ -457,7 +412,6 @@ func TestGatusExternalEndpointReconciler_DeterministicOrder(t *testing.T) {
 	if len(endpoints) != 2 {
 		t.Fatalf("expected 2 endpoints, got %d", len(endpoints))
 	}
-	// First should be aaa-worker (alphabetical order)
 	first := endpoints[0].(map[string]interface{})
 	if first["name"] != "AAA Worker" {
 		t.Errorf("expected first endpoint to be 'AAA Worker', got %v", first["name"])

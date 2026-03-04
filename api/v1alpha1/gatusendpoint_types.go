@@ -1,45 +1,50 @@
 package v1alpha1
 
 import (
+	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// GatusAlertRef references a GatusAlert resource and optionally overrides per-endpoint alert behavior.
-type GatusAlertRef struct {
-	// Name is the name of the GatusAlert resource.
+// GatusAlertSpec defines an inline alert configuration for a GatusEndpoint or GatusExternalEndpoint.
+// It mirrors the Gatus alert configuration format directly.
+type GatusAlertSpec struct {
+	// Type is the alert provider type (e.g. "slack", "discord", "pagerduty").
 	// +kubebuilder:validation:Required
-	Name string `json:"name"`
+	// +kubebuilder:validation:Enum=awsses;clickup;custom;datadog;discord;email;gitea;github;gitlab;googlechat;gotify;homeassistant;ifttt;ilert;incident-io;line;matrix;mattermost;messagebird;n8n;newrelic;ntfy;opsgenie;pagerduty;plivo;pushover;rocketchat;sendgrid;signal;signl4;slack;splunk;squadcast;teams;teams-workflows;telegram;twilio;vonage;webex;zapier;zulip
+	Type string `json:"type"`
 
-	// Namespace of the GatusAlert resource. Defaults to the endpoint's namespace.
-	// +optional
-	Namespace string `json:"namespace,omitempty"`
-
-	// Description is an endpoint-specific description included in the alert notification.
-	// Overrides the GatusAlert default description.
-	// +optional
-	Description string `json:"description,omitempty"`
-
-	// Enabled overrides the GatusAlert enabled flag for this endpoint.
+	// Enabled indicates whether this alert is active.
+	// +kubebuilder:default=true
 	// +optional
 	Enabled *bool `json:"enabled,omitempty"`
 
-	// FailureThreshold overrides the GatusAlert default failure threshold for this endpoint.
-	// 0 means use the GatusAlert default.
+	// FailureThreshold is the number of consecutive failures before triggering the alert.
+	// +kubebuilder:default=3
 	// +optional
 	FailureThreshold int `json:"failureThreshold,omitempty"`
 
-	// SuccessThreshold overrides the GatusAlert default success threshold for this endpoint.
-	// 0 means use the GatusAlert default.
+	// SuccessThreshold is the number of consecutive successes before resolving an ongoing incident.
+	// +kubebuilder:default=2
 	// +optional
 	SuccessThreshold int `json:"successThreshold,omitempty"`
 
-	// SendOnResolved overrides the GatusAlert default send-on-resolved setting for this endpoint.
+	// SendOnResolved indicates whether to send a notification once a triggered alert is resolved.
 	// +optional
 	SendOnResolved *bool `json:"sendOnResolved,omitempty"`
 
-	// MinimumReminderInterval overrides the GatusAlert default minimum reminder interval for this endpoint.
+	// Description is the description included in the alert notification.
+	// +optional
+	Description string `json:"description,omitempty"`
+
+	// MinimumReminderInterval is the minimum duration between alert reminders (e.g. "30m", "1h").
+	// Set to "0" or leave empty to disable reminders.
 	// +optional
 	MinimumReminderInterval string `json:"minimumReminderInterval,omitempty"`
+
+	// ProviderOverride allows overriding specific provider configuration fields for this alert.
+	// Maps directly to provider-override in the Gatus alert configuration.
+	// +optional
+	ProviderOverride map[string]apiextv1.JSON `json:"providerOverride,omitempty"`
 }
 
 // GatusDNSConfig holds DNS monitoring configuration.
@@ -233,9 +238,9 @@ type GatusEndpointSpec struct {
 	// +optional
 	Conditions []string `json:"conditions,omitempty"`
 
-	// Alerts is the list of alert references for this endpoint.
+	// Alerts is the list of alert configurations for this endpoint.
 	// +optional
-	Alerts []GatusAlertRef `json:"alerts,omitempty"`
+	Alerts []GatusAlertSpec `json:"alerts,omitempty"`
 
 	// DNS contains DNS-specific monitoring configuration.
 	// +optional

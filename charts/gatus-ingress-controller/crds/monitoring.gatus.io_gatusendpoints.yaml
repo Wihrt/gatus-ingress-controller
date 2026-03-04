@@ -72,28 +72,76 @@ spec:
                   description: Health conditions to evaluate.
                 alerts:
                   type: array
-                  description: Alert references for this endpoint.
+                  description: Inline alert configurations for this endpoint.
                   items:
                     type: object
                     required:
-                      - name
+                      - type
                     properties:
-                      name:
+                      type:
                         type: string
-                      namespace:
-                        type: string
-                      description:
-                        type: string
+                        description: Alert provider type.
+                        enum:
+                          - awsses
+                          - clickup
+                          - custom
+                          - datadog
+                          - discord
+                          - email
+                          - gitea
+                          - github
+                          - gitlab
+                          - googlechat
+                          - gotify
+                          - homeassistant
+                          - ifttt
+                          - ilert
+                          - incident-io
+                          - line
+                          - matrix
+                          - mattermost
+                          - messagebird
+                          - n8n
+                          - newrelic
+                          - ntfy
+                          - opsgenie
+                          - pagerduty
+                          - plivo
+                          - pushover
+                          - rocketchat
+                          - sendgrid
+                          - signal
+                          - signl4
+                          - slack
+                          - splunk
+                          - squadcast
+                          - teams
+                          - teams-workflows
+                          - telegram
+                          - twilio
+                          - vonage
+                          - webex
+                          - zapier
+                          - zulip
                       enabled:
                         type: boolean
+                        default: true
                       failureThreshold:
                         type: integer
+                        default: 3
                       successThreshold:
                         type: integer
+                        default: 2
                       sendOnResolved:
                         type: boolean
+                      description:
+                        type: string
                       minimumReminderInterval:
                         type: string
+                      providerOverride:
+                        type: object
+                        description: Provider-specific configuration overrides.
+                        x-kubernetes-preserve-unknown-fields: true
                 dns:
                   type: object
                   description: DNS-specific monitoring configuration.

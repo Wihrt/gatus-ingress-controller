@@ -44,30 +44,9 @@ spec:
         - script:
             content: kubectl get secret gatus-secrets -n gatus -o jsonpath='{.data.external-endpoints\.yaml}' | base64 -d
 
-    # ── Step 2: Alert reference renders in external-endpoints.yaml ───────────
-    - name: "[GatusExternalEndpoint+Alert] alert reference renders in external-endpoints.yaml"
+    # ── Step 2: Inline alert renders in external-endpoints.yaml ───────────────
+    - name: "[GatusExternalEndpoint] inline alert renders in external-endpoints.yaml"
       try:
-        - apply:
-            resource:
-              apiVersion: monitoring.gatus.io/v1alpha1
-              kind: GatusAlertingConfig
-              metadata:
-                name: slack-config
-              spec:
-                type: slack
-                config:
-                  webhook-url: "https://hooks.slack.com/services/test/test/test"
-        - apply:
-            resource:
-              apiVersion: monitoring.gatus.io/v1alpha1
-              kind: GatusAlert
-              metadata:
-                name: test-slack-alert
-              spec:
-                alertingConfigRef: slack-config
-                failureThreshold: 5
-                successThreshold: 2
-                sendOnResolved: true
         - apply:
             resource:
               apiVersion: monitoring.gatus.io/v1alpha1
@@ -79,8 +58,10 @@ spec:
                 group: "workers"
                 token: "my-alerted-token"
                 alerts:
-                  - name: test-slack-alert
+                  - type: slack
                     failureThreshold: 3
+                    successThreshold: 2
+                    sendOnResolved: true
         - assert:
             resource:
               apiVersion: v1
@@ -96,10 +77,6 @@ spec:
             apiVersion: monitoring.gatus.io/v1alpha1
             kind: GatusExternalEndpoint
             name: test-alerted-worker
-        - describe:
-            apiVersion: monitoring.gatus.io/v1alpha1
-            kind: GatusAlert
-            name: test-slack-alert
         - script:
             content: kubectl get secret gatus-secrets -n gatus -o jsonpath='{.data.external-endpoints\.yaml}' | base64 -d
 

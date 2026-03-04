@@ -17,20 +17,14 @@ serviceAccount:
   create: true
   name: ""
 
-# Namespace where the Gatus ConfigMap will be written
+# Namespace where the Gatus Secret will be written
 targetNamespace: gatus
 
-# Name of the ConfigMap that the controller will append endpoints to.
-# This ConfigMap must already exist and contain a config.yaml key with the
-# main Gatus configuration (storage, alerting providers, web, etc.).
-# Set this to match the ConfigMap name used by your Gatus Helm release.
-configMapName: gatus-config
-
-# Name of the Secret where sensitive outputs (alerting.yaml, endpoints.yaml,
+# Name of the Secret where endpoint configurations (endpoints.yaml,
 # external-endpoints.yaml) will be written. Must already exist in targetNamespace.
 secretName: gatus-secrets
 
-# Webhook configuration for validating admission of GatusAlertingConfig resources.
+# Webhook configuration for validating admission of GatusEndpoint resources.
 # Requires cert-manager to be installed in the cluster when enabled.
 webhook:
   enabled: true

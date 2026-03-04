@@ -8,20 +8,6 @@ metadata:
   annotations:
     cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/{{ include "gatus-ingress-controller.fullname" . }}-webhook-tls
 webhooks:
-  - name: vgatusalertingconfig.kb.io
-    admissionReviewVersions: ["v1"]
-    clientConfig:
-      service:
-        name: {{ include "gatus-ingress-controller.fullname" . }}-webhook
-        namespace: {{ .Release.Namespace }}
-        path: /validate-monitoring-gatus-io-v1alpha1-gatusalertingconfig
-    rules:
-      - apiGroups: ["monitoring.gatus.io"]
-        apiVersions: ["v1alpha1"]
-        operations: ["CREATE", "UPDATE"]
-        resources: ["gatusalertingconfigs"]
-    sideEffects: None
-    failurePolicy: Fail
   - name: vgatusendpoint.kb.io
     admissionReviewVersions: ["v1"]
     clientConfig:
@@ -34,20 +20,6 @@ webhooks:
         apiVersions: ["v1alpha1"]
         operations: ["CREATE", "UPDATE"]
         resources: ["gatusendpoints"]
-    sideEffects: None
-    failurePolicy: Fail
-  - name: vgatusalert.kb.io
-    admissionReviewVersions: ["v1"]
-    clientConfig:
-      service:
-        name: {{ include "gatus-ingress-controller.fullname" . }}-webhook
-        namespace: {{ .Release.Namespace }}
-        path: /validate-monitoring-gatus-io-v1alpha1-gatusalert
-    rules:
-      - apiGroups: ["monitoring.gatus.io"]
-        apiVersions: ["v1alpha1"]
-        operations: ["CREATE", "UPDATE"]
-        resources: ["gatusalerts"]
     sideEffects: None
     failurePolicy: Fail
 {{- end }}

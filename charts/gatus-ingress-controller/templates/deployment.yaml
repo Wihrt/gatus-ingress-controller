@@ -15,15 +15,24 @@ spec:
         {{- include "gatus-ingress-controller.selectorLabels" . | nindent 8 }}
     spec:
       serviceAccountName: {{ include "gatus-ingress-controller.serviceAccountName" . }}
+      automountServiceAccountToken: true
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: {{ .Chart.Name }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           env:
             - name: TARGET_NAMESPACE
               value: {{ .Values.targetNamespace | quote }}
-            - name: CONFIG_MAP_NAME
-              value: {{ .Values.configMapName | quote }}
             - name: SECRET_NAME
               value: {{ .Values.secretName | quote }}
             - name: POD_NAMESPACE

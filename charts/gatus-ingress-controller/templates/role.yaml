@@ -7,13 +7,6 @@ metadata:
     {{- include "gatus-ingress-controller.labels" . | nindent 4 }}
 rules:
   - apiGroups: [""]
-    resources: ["configmaps"]
-    verbs: ["list", "watch"]
-  - apiGroups: [""]
-    resources: ["configmaps"]
-    resourceNames: ["{{ .Values.configMapName }}"]
-    verbs: ["get", "update", "patch"]
-  - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["list", "watch"]
   - apiGroups: [""]

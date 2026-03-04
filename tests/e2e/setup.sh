@@ -21,13 +21,9 @@ echo "    Target namespace: ${TARGET_NAMESPACE}"
 
 # ── 1. Target namespace and pre-existing resources ────────────────────────────
 kubectl create namespace "${TARGET_NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -
-kubectl create configmap gatus-config -n "${TARGET_NAMESPACE}" \
-  --from-literal=announcements.yaml="# placeholder" \
-  --dry-run=client -o yaml | kubectl apply -f -
 kubectl create secret generic gatus-secrets -n "${TARGET_NAMESPACE}" \
   --from-literal=endpoints.yaml="placeholder" \
   --from-literal=external-endpoints.yaml="placeholder" \
-  --from-literal=alerting.yaml="placeholder" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 # ── 2. Deploy cert-manager ────────────────────────────────────────────────────
@@ -59,11 +55,8 @@ helm upgrade --install "${RELEASE_NAME}" ./charts/gatus-ingress-controller \
 
 # ── 4. Wait for CRDs to be Established ───────────────────────────────────────
 echo "==> Waiting for CRDs to be Established..."
-kubectl wait --for=condition=Established --timeout="${TIMEOUT}" crd/gatusalerts.monitoring.gatus.io
-kubectl wait --for=condition=Established --timeout="${TIMEOUT}" crd/gatusalertingconfigs.monitoring.gatus.io
 kubectl wait --for=condition=Established --timeout="${TIMEOUT}" crd/gatusendpoints.monitoring.gatus.io
 kubectl wait --for=condition=Established --timeout="${TIMEOUT}" crd/gatusexternalendpoints.monitoring.gatus.io
-kubectl wait --for=condition=Established --timeout="${TIMEOUT}" crd/gatusannouncements.monitoring.gatus.io
 
 # ── 5. Wait for controller to be ready ────────────────────────────────────────
 echo "==> Waiting for controller to be ready..."

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Kubernetes controller that manages [Gatus](https://github.com/TwiN/gatus) monitoring endpoints via custom resources, aggregating configurations into a shared ConfigMap (non-sensitive data) and Secret (sensitive data) that Gatus reads.
+Kubernetes controller that manages [Gatus](https://github.com/TwiN/gatus) monitoring endpoints via custom resources, aggregating configurations into a shared Secret that Gatus reads.
 
 ## Commands
 
@@ -37,14 +37,10 @@ Pre-commit hooks run `go vet`, `go build`, `go test`, `hadolint`, and `helm lint
 **Reconcilers** (registered in `cmd/main.go`):
 - `GatusEndpointReconciler` — aggregates all `GatusEndpoint` CRs into Secret; injects default condition `[STATUS] == 200` when `spec.conditions` is empty
 - `GatusExternalEndpointReconciler` — handles externally-pushed status endpoints
-- `GatusAlertingConfigReconciler` — validates alerting config, merges `configSecretRef`, aggregates into Secret
-- `GatusAlertReconciler` — validates alert provider configs (via `alertingConfigRef`), aggregates into Secret
-- `GatusAnnouncementReconciler` — aggregates status page announcements into ConfigMap
 
-**CRDs** (`api/v1alpha1/`): GatusEndpoint, GatusAlert, GatusAlertingConfig, GatusExternalEndpoint, GatusAnnouncement.
+**CRDs** (`api/v1alpha1/`): GatusEndpoint, GatusExternalEndpoint.
 
-**ConfigMap keys** managed by the controller: `announcements.yaml`. User-managed `config.yaml` is preserved.
-**Secret keys** managed by the controller: `endpoints.yaml`, `external-endpoints.yaml`, `alerting.yaml`.
+**Secret keys** managed by the controller: `endpoints.yaml`, `external-endpoints.yaml`.
 
 ## Key Conventions
 
@@ -53,14 +49,14 @@ Pre-commit hooks run `go vet`, `go build`, `go test`, `hadolint`, and `helm lint
 - **Tests**: use `fake.Client` (no envtest), shared `newTestScheme(t)` helper in `helpers_test.go`
 - **Default conditions**: when `GatusEndpoint.spec.conditions` is empty, the reconciler injects `[STATUS] == 200` in the generated YAML output (the CR itself is not modified)
 - **Deduplication**: when two `GatusEndpoint` CRs share the same `spec.name`, the first alphabetically (by namespace/name) wins
+- **Inline alerts**: alerts are defined directly on GatusEndpoint/GatusExternalEndpoint with `type` and optional `providerOverride` fields, matching Gatus config format
 
 ## Runtime Env Vars
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `TARGET_NAMESPACE` | `gatus` | Namespace where ConfigMap and Secret are written |
-| `CONFIG_MAP_NAME` | `gatus-config` | Target ConfigMap name |
-| `SECRET_NAME` | `gatus-secrets` | Target Secret name (for sensitive data) |
+| `TARGET_NAMESPACE` | `gatus` | Namespace where Secret is written |
+| `SECRET_NAME` | `gatus-secrets` | Target Secret name |
 
 ## Docker
 

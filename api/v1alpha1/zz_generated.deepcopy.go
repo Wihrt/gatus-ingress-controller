@@ -8,63 +8,18 @@ import (
 	runtime "k8s.io/apimachinery/pkg/runtime"
 )
 
-// ── GatusAlert ──────────────────────────────────────────────────────────────
-
-func (in *GatusAlert) DeepCopyInto(out *GatusAlert) {
-	*out = *in
-	out.TypeMeta = in.TypeMeta
-	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
-	in.Spec.DeepCopyInto(&out.Spec)
-	in.Status.DeepCopyInto(&out.Status)
-}
-
-func (in *GatusAlert) DeepCopy() *GatusAlert {
-	if in == nil {
-		return nil
-	}
-	out := new(GatusAlert)
-	in.DeepCopyInto(out)
-	return out
-}
-
-func (in *GatusAlert) DeepCopyObject() runtime.Object {
-	if c := in.DeepCopy(); c != nil {
-		return c
-	}
-	return nil
-}
-
-func (in *GatusAlertList) DeepCopyInto(out *GatusAlertList) {
-	*out = *in
-	out.TypeMeta = in.TypeMeta
-	in.ListMeta.DeepCopyInto(&out.ListMeta)
-	if in.Items != nil {
-		in, out := &in.Items, &out.Items
-		*out = make([]GatusAlert, len(*in))
-		for i := range *in {
-			(*in)[i].DeepCopyInto(&(*out)[i])
-		}
-	}
-}
-
-func (in *GatusAlertList) DeepCopy() *GatusAlertList {
-	if in == nil {
-		return nil
-	}
-	out := new(GatusAlertList)
-	in.DeepCopyInto(out)
-	return out
-}
-
-func (in *GatusAlertList) DeepCopyObject() runtime.Object {
-	if c := in.DeepCopy(); c != nil {
-		return c
-	}
-	return nil
-}
+// ── GatusAlertSpec ───────────────────────────────────────────────────────────
 
 func (in *GatusAlertSpec) DeepCopyInto(out *GatusAlertSpec) {
 	*out = *in
+	if in.Enabled != nil {
+		x := *in.Enabled
+		out.Enabled = &x
+	}
+	if in.SendOnResolved != nil {
+		x := *in.SendOnResolved
+		out.SendOnResolved = &x
+	}
 	if in.ProviderOverride != nil {
 		in, out := &in.ProviderOverride, &out.ProviderOverride
 		*out = make(map[string]apiextv1.JSON, len(*in))
@@ -79,252 +34,6 @@ func (in *GatusAlertSpec) DeepCopy() *GatusAlertSpec {
 		return nil
 	}
 	out := new(GatusAlertSpec)
-	in.DeepCopyInto(out)
-	return out
-}
-
-func (in *GatusAlertStatus) DeepCopyInto(out *GatusAlertStatus) {
-	*out = *in
-	if in.Conditions != nil {
-		in, out := &in.Conditions, &out.Conditions
-		*out = make([]v1.Condition, len(*in))
-		for i := range *in {
-			(*in)[i].DeepCopyInto(&(*out)[i])
-		}
-	}
-}
-
-func (in *GatusAlertStatus) DeepCopy() *GatusAlertStatus {
-	if in == nil {
-		return nil
-	}
-	out := new(GatusAlertStatus)
-	in.DeepCopyInto(out)
-	return out
-}
-
-// ── ConfigSecretRef ──────────────────────────────────────────────────────────
-
-func (in *ConfigSecretRef) DeepCopyInto(out *ConfigSecretRef) {
-	*out = *in
-}
-
-func (in *ConfigSecretRef) DeepCopy() *ConfigSecretRef {
-	if in == nil {
-		return nil
-	}
-	out := new(ConfigSecretRef)
-	in.DeepCopyInto(out)
-	return out
-}
-
-// ── GatusAlertingConfig ──────────────────────────────────────────────────────
-
-func (in *GatusAlertingConfig) DeepCopyInto(out *GatusAlertingConfig) {
-	*out = *in
-	out.TypeMeta = in.TypeMeta
-	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
-	in.Spec.DeepCopyInto(&out.Spec)
-	in.Status.DeepCopyInto(&out.Status)
-}
-
-func (in *GatusAlertingConfig) DeepCopy() *GatusAlertingConfig {
-	if in == nil {
-		return nil
-	}
-	out := new(GatusAlertingConfig)
-	in.DeepCopyInto(out)
-	return out
-}
-
-func (in *GatusAlertingConfig) DeepCopyObject() runtime.Object {
-	if c := in.DeepCopy(); c != nil {
-		return c
-	}
-	return nil
-}
-
-func (in *GatusAlertingConfigList) DeepCopyInto(out *GatusAlertingConfigList) {
-	*out = *in
-	out.TypeMeta = in.TypeMeta
-	in.ListMeta.DeepCopyInto(&out.ListMeta)
-	if in.Items != nil {
-		in, out := &in.Items, &out.Items
-		*out = make([]GatusAlertingConfig, len(*in))
-		for i := range *in {
-			(*in)[i].DeepCopyInto(&(*out)[i])
-		}
-	}
-}
-
-func (in *GatusAlertingConfigList) DeepCopy() *GatusAlertingConfigList {
-	if in == nil {
-		return nil
-	}
-	out := new(GatusAlertingConfigList)
-	in.DeepCopyInto(out)
-	return out
-}
-
-func (in *GatusAlertingConfigList) DeepCopyObject() runtime.Object {
-	if c := in.DeepCopy(); c != nil {
-		return c
-	}
-	return nil
-}
-
-func (in *GatusAlertingConfigSpec) DeepCopyInto(out *GatusAlertingConfigSpec) {
-	*out = *in
-	if in.Config != nil {
-		in, out := &in.Config, &out.Config
-		*out = make(map[string]apiextv1.JSON, len(*in))
-		for k, v := range *in {
-			(*out)[k] = *v.DeepCopy()
-		}
-	}
-	if in.ConfigSecretRef != nil {
-		in, out := &in.ConfigSecretRef, &out.ConfigSecretRef
-		*out = new(ConfigSecretRef)
-		**out = **in
-	}
-}
-
-func (in *GatusAlertingConfigSpec) DeepCopy() *GatusAlertingConfigSpec {
-	if in == nil {
-		return nil
-	}
-	out := new(GatusAlertingConfigSpec)
-	in.DeepCopyInto(out)
-	return out
-}
-
-func (in *GatusAlertingConfigStatus) DeepCopyInto(out *GatusAlertingConfigStatus) {
-	*out = *in
-	if in.Conditions != nil {
-		in, out := &in.Conditions, &out.Conditions
-		*out = make([]v1.Condition, len(*in))
-		for i := range *in {
-			(*in)[i].DeepCopyInto(&(*out)[i])
-		}
-	}
-}
-
-func (in *GatusAlertingConfigStatus) DeepCopy() *GatusAlertingConfigStatus {
-	if in == nil {
-		return nil
-	}
-	out := new(GatusAlertingConfigStatus)
-	in.DeepCopyInto(out)
-	return out
-}
-
-// ── GatusAnnouncement ────────────────────────────────────────────────────────
-
-func (in *GatusAnnouncement) DeepCopyInto(out *GatusAnnouncement) {
-	*out = *in
-	out.TypeMeta = in.TypeMeta
-	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
-	out.Spec = in.Spec
-	in.Status.DeepCopyInto(&out.Status)
-}
-
-func (in *GatusAnnouncement) DeepCopy() *GatusAnnouncement {
-	if in == nil {
-		return nil
-	}
-	out := new(GatusAnnouncement)
-	in.DeepCopyInto(out)
-	return out
-}
-
-func (in *GatusAnnouncement) DeepCopyObject() runtime.Object {
-	if c := in.DeepCopy(); c != nil {
-		return c
-	}
-	return nil
-}
-
-func (in *GatusAnnouncementList) DeepCopyInto(out *GatusAnnouncementList) {
-	*out = *in
-	out.TypeMeta = in.TypeMeta
-	in.ListMeta.DeepCopyInto(&out.ListMeta)
-	if in.Items != nil {
-		in, out := &in.Items, &out.Items
-		*out = make([]GatusAnnouncement, len(*in))
-		for i := range *in {
-			(*in)[i].DeepCopyInto(&(*out)[i])
-		}
-	}
-}
-
-func (in *GatusAnnouncementList) DeepCopy() *GatusAnnouncementList {
-	if in == nil {
-		return nil
-	}
-	out := new(GatusAnnouncementList)
-	in.DeepCopyInto(out)
-	return out
-}
-
-func (in *GatusAnnouncementList) DeepCopyObject() runtime.Object {
-	if c := in.DeepCopy(); c != nil {
-		return c
-	}
-	return nil
-}
-
-func (in *GatusAnnouncementSpec) DeepCopyInto(out *GatusAnnouncementSpec) {
-	*out = *in
-}
-
-func (in *GatusAnnouncementSpec) DeepCopy() *GatusAnnouncementSpec {
-	if in == nil {
-		return nil
-	}
-	out := new(GatusAnnouncementSpec)
-	in.DeepCopyInto(out)
-	return out
-}
-
-func (in *GatusAnnouncementStatus) DeepCopyInto(out *GatusAnnouncementStatus) {
-	*out = *in
-	if in.Conditions != nil {
-		in, out := &in.Conditions, &out.Conditions
-		*out = make([]v1.Condition, len(*in))
-		for i := range *in {
-			(*in)[i].DeepCopyInto(&(*out)[i])
-		}
-	}
-}
-
-func (in *GatusAnnouncementStatus) DeepCopy() *GatusAnnouncementStatus {
-	if in == nil {
-		return nil
-	}
-	out := new(GatusAnnouncementStatus)
-	in.DeepCopyInto(out)
-	return out
-}
-
-// ── GatusAlertRef ────────────────────────────────────────────────────────────
-
-func (in *GatusAlertRef) DeepCopyInto(out *GatusAlertRef) {
-	*out = *in
-	if in.Enabled != nil {
-		x := *in.Enabled
-		out.Enabled = &x
-	}
-	if in.SendOnResolved != nil {
-		x := *in.SendOnResolved
-		out.SendOnResolved = &x
-	}
-}
-
-func (in *GatusAlertRef) DeepCopy() *GatusAlertRef {
-	if in == nil {
-		return nil
-	}
-	out := new(GatusAlertRef)
 	in.DeepCopyInto(out)
 	return out
 }
@@ -525,7 +234,7 @@ func (in *GatusEndpointSpec) DeepCopyInto(out *GatusEndpointSpec) {
 	}
 	if in.Alerts != nil {
 		in, out := &in.Alerts, &out.Alerts
-		*out = make([]GatusAlertRef, len(*in))
+		*out = make([]GatusAlertSpec, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
@@ -667,7 +376,7 @@ func (in *GatusExternalEndpointSpec) DeepCopyInto(out *GatusExternalEndpointSpec
 	*out = *in
 	if in.Alerts != nil {
 		in, out := &in.Alerts, &out.Alerts
-		*out = make([]GatusAlertRef, len(*in))
+		*out = make([]GatusAlertSpec, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
