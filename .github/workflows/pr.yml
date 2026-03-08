@@ -73,7 +73,7 @@ jobs:
 
       - name: Install k3s
         run: |
-          curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="v1.35.1+k3s1" INSTALL_K3S_EXEC="--disable=traefik" sh -
+          curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="v1.35.2+k3s1" INSTALL_K3S_EXEC="--disable=traefik" sh -
           mkdir -p ~/.kube
           sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
           sudo chown "$(whoami)" ~/.kube/config
