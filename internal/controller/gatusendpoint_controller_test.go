@@ -3,29 +3,22 @@ package controller
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
 	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	monitoringv1alpha1 "github.com/Wihrt/gatus-ingress-controller/api/v1alpha1"
 )
 
-func newEndpointTestScheme(t *testing.T) *fake.ClientBuilder {
-	t.Helper()
-	s := newTestScheme(t)
-	_ = clientgoscheme.AddToScheme(s)
-	return fake.NewClientBuilder().WithScheme(s)
-}
-
-// TestGatusEndpointReconciler_WritesConfigMap verifies the basic happy path:
+// TestGatusEndpointReconciler_WritesEndpointsToSecret verifies the basic happy path:
 // all GatusEndpoint CRs are written into the Secret under endpoints.yaml.
-func TestGatusEndpointReconciler_WritesConfigMap(t *testing.T) {
+func TestGatusEndpointReconciler_WritesEndpointsToSecret(t *testing.T) {
 	ctx := context.Background()
 	s := newTestScheme(t)
 
@@ -71,17 +64,17 @@ func TestGatusEndpointReconciler_WritesConfigMap(t *testing.T) {
 	if !ok {
 		t.Fatal("endpoints.yaml key not found in Secret")
 	}
-	if !contains(string(endpointsYAML), "My Service") {
+	if !strings.Contains(string(endpointsYAML), "My Service") {
 		t.Errorf("expected 'My Service' in endpoints.yaml, got:\n%s", string(endpointsYAML))
 	}
-	if !contains(string(endpointsYAML), "prod") {
+	if !strings.Contains(string(endpointsYAML), "prod") {
 		t.Errorf("expected group 'prod' in endpoints.yaml, got:\n%s", string(endpointsYAML))
 	}
 }
 
-// TestGatusEndpointReconciler_RequeuesWhenConfigMapMissing verifies that reconciliation
+// TestGatusEndpointReconciler_RequeuesWhenSecretMissing verifies that reconciliation
 // is requeued (not errored) when the target Secret does not exist yet.
-func TestGatusEndpointReconciler_RequeuesWhenConfigMapMissing(t *testing.T) {
+func TestGatusEndpointReconciler_RequeuesWhenSecretMissing(t *testing.T) {
 	ctx := context.Background()
 	s := newTestScheme(t)
 
@@ -166,7 +159,7 @@ func TestGatusEndpointReconciler_DefaultCondition(t *testing.T) {
 		t.Fatal("endpoints.yaml key not found in Secret")
 	}
 
-	if !contains(string(endpointsYAML), "[STATUS] == 200") {
+	if !strings.Contains(string(endpointsYAML), "[STATUS] == 200") {
 		t.Errorf("expected default condition '[STATUS] == 200' in endpoints.yaml, got:\n%s", string(endpointsYAML))
 	}
 }
@@ -217,7 +210,7 @@ func TestGatusEndpointReconciler_InlineAlert(t *testing.T) {
 		"description: endpoint d": "description",
 	}
 	for substr, label := range checks {
-		if !contains(y, substr) {
+		if !strings.Contains(y, substr) {
 			t.Errorf("expected %s (%q) in endpoints.yaml, got:\n%s", label, substr, y)
 		}
 	}
@@ -273,7 +266,7 @@ func TestGatusEndpointReconciler_InlineAlertOverrides(t *testing.T) {
 		"enabled: false":                 "enabled=false override",
 	}
 	for substr, label := range checks {
-		if !contains(y, substr) {
+		if !strings.Contains(y, substr) {
 			t.Errorf("expected %s (%q) in endpoints.yaml, got:\n%s", label, substr, y)
 		}
 	}
@@ -330,32 +323,10 @@ func TestGatusEndpointReconciler_WithClientConfig(t *testing.T) {
 		"private-key-file: /certs/tls.key":    "TLS private-key-file",
 	}
 	for substr, label := range checks {
-		if !contains(y, substr) {
+		if !strings.Contains(y, substr) {
 			t.Errorf("expected %s (%q) in endpoints.yaml, got:\n%s", label, substr, y)
 		}
 	}
-}
-
-func contains(s, substr string) bool {
-	return len(s) > 0 && len(substr) > 0 && (func() bool {
-		for i := 0; i <= len(s)-len(substr); i++ {
-			if s[i:i+len(substr)] == substr {
-				return true
-			}
-		}
-		return false
-	})()
-}
-
-func count(s, substr string) int {
-	n := 0
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			n++
-			i += len(substr) - 1
-		}
-	}
-	return n
 }
 
 func makeAPIExtJSON(v interface{}) apiextv1.JSON {
@@ -401,10 +372,10 @@ func TestGatusEndpointReconciler_ProviderOverride(t *testing.T) {
 	_ = fakeClient.Get(ctx, types.NamespacedName{Name: "gatus-secrets", Namespace: "gatus"}, updatedSecret)
 	y := string(updatedSecret.Data["endpoints.yaml"])
 
-	if !contains(y, "provider-override") {
+	if !strings.Contains(y, "provider-override") {
 		t.Errorf("expected 'provider-override' in endpoints.yaml, got:\n%s", y)
 	}
-	if !contains(y, "e2e-bot") {
+	if !strings.Contains(y, "e2e-bot") {
 		t.Errorf("expected 'e2e-bot' in endpoints.yaml, got:\n%s", y)
 	}
 }
@@ -441,7 +412,7 @@ func TestGatusEndpointReconciler_WithDNSConfig(t *testing.T) {
 	y := string(updated.Data["endpoints.yaml"])
 
 	for _, check := range []string{"query-name: example.com", "query-type: A"} {
-		if !contains(y, check) {
+		if !strings.Contains(y, check) {
 			t.Errorf("expected %q in endpoints.yaml, got:\n%s", check, y)
 		}
 	}
@@ -479,7 +450,7 @@ func TestGatusEndpointReconciler_WithSSHConfig(t *testing.T) {
 	y := string(updated.Data["endpoints.yaml"])
 
 	for _, check := range []string{"username: admin", "password: s3cret"} {
-		if !contains(y, check) {
+		if !strings.Contains(y, check) {
 			t.Errorf("expected %q in endpoints.yaml, got:\n%s", check, y)
 		}
 	}
@@ -517,7 +488,7 @@ func TestGatusEndpointReconciler_WithUIConfig(t *testing.T) {
 	y := string(updated.Data["endpoints.yaml"])
 
 	for _, check := range []string{"hide-conditions: true", "hide-hostname: true", "hide-url: true"} {
-		if !contains(y, check) {
+		if !strings.Contains(y, check) {
 			t.Errorf("expected %q in endpoints.yaml, got:\n%s", check, y)
 		}
 	}
@@ -558,7 +529,7 @@ func TestGatusEndpointReconciler_WithMaintenanceWindows(t *testing.T) {
 	y := string(updated.Data["endpoints.yaml"])
 
 	for _, check := range []string{"maintenance-windows:", "start: \"23:00\"", "duration: 1h", "timezone: UTC", "- Monday", "- Friday"} {
-		if !contains(y, check) {
+		if !strings.Contains(y, check) {
 			t.Errorf("expected %q in endpoints.yaml, got:\n%s", check, y)
 		}
 	}
@@ -591,10 +562,10 @@ func TestGatusEndpointReconciler_NoAlerts(t *testing.T) {
 	_ = fakeClient.Get(ctx, types.NamespacedName{Name: "gatus-secrets", Namespace: "gatus"}, updated)
 	y := string(updated.Data["endpoints.yaml"])
 
-	if !contains(y, "No Alerts EP") {
+	if !strings.Contains(y, "No Alerts EP") {
 		t.Errorf("expected endpoint to be written, got:\n%s", y)
 	}
-	if contains(y, "alerts:") {
+	if strings.Contains(y, "alerts:") {
 		t.Errorf("expected no alerts block when none specified, got:\n%s", y)
 	}
 }
@@ -633,10 +604,10 @@ func TestGatusEndpointReconciler_ConflictDeduplication(t *testing.T) {
 	_ = fakeClient.Get(ctx, types.NamespacedName{Name: "gatus-secrets", Namespace: "gatus"}, updatedSecret)
 	y := string(updatedSecret.Data["endpoints.yaml"])
 
-	if !contains(y, "aaa.example.com") {
+	if !strings.Contains(y, "aaa.example.com") {
 		t.Errorf("expected 'aaa.example.com' (winner) in endpoints.yaml, got:\n%s", y)
 	}
-	if count(y, "shared-name") > 1 {
+	if strings.Count(y, "shared-name") > 1 {
 		t.Errorf("expected only one 'shared-name' entry, got:\n%s", y)
 	}
 }
@@ -669,7 +640,7 @@ func TestGatusEndpointReconciler_DeletedEndpointRemovedFromSecret(t *testing.T) 
 
 	updated := &corev1.Secret{}
 	_ = fakeClient.Get(ctx, types.NamespacedName{Name: "gatus-secrets", Namespace: "gatus"}, updated)
-	if !contains(string(updated.Data["endpoints.yaml"]), "Deletable Service") {
+	if !strings.Contains(string(updated.Data["endpoints.yaml"]), "Deletable Service") {
 		t.Fatal("expected endpoint to be present before deletion")
 	}
 
@@ -685,7 +656,7 @@ func TestGatusEndpointReconciler_DeletedEndpointRemovedFromSecret(t *testing.T) 
 	}
 
 	_ = fakeClient.Get(ctx, types.NamespacedName{Name: "gatus-secrets", Namespace: "gatus"}, updated)
-	if contains(string(updated.Data["endpoints.yaml"]), "Deletable Service") {
+	if strings.Contains(string(updated.Data["endpoints.yaml"]), "Deletable Service") {
 		t.Errorf("expected endpoint to be removed after deletion, got:\n%s", string(updated.Data["endpoints.yaml"]))
 	}
 }
@@ -728,10 +699,10 @@ func TestGatusEndpointReconciler_UpdateReflectedInSecret(t *testing.T) {
 	updated := &corev1.Secret{}
 	_ = fakeClient.Get(ctx, types.NamespacedName{Name: "gatus-secrets", Namespace: "gatus"}, updated)
 	y := string(updated.Data["endpoints.yaml"])
-	if !contains(y, "updated.example.com") {
+	if !strings.Contains(y, "updated.example.com") {
 		t.Errorf("expected updated URL in endpoints.yaml, got:\n%s", y)
 	}
-	if !contains(y, "Updated Name") {
+	if !strings.Contains(y, "Updated Name") {
 		t.Errorf("expected updated name in endpoints.yaml, got:\n%s", y)
 	}
 }
@@ -770,7 +741,7 @@ func TestGatusEndpointReconciler_MultipleAlertTypes(t *testing.T) {
 	y := string(updatedSecret.Data["endpoints.yaml"])
 
 	for _, alertType := range []string{"slack", "discord", "pagerduty"} {
-		if !contains(y, "type: "+alertType) {
+		if !strings.Contains(y, "type: "+alertType) {
 			t.Errorf("expected 'type: %s' in endpoints.yaml, got:\n%s", alertType, y)
 		}
 	}

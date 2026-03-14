@@ -3,7 +3,6 @@ package controller
 import (
 	"testing"
 
-	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 
@@ -18,9 +17,6 @@ func newTestScheme(t *testing.T) *runtime.Scheme {
 	}
 	if err := monitoringv1alpha1.AddToScheme(s); err != nil {
 		t.Fatalf("failed to add monitoring scheme: %v", err)
-	}
-	if err := networkingv1.AddToScheme(s); err != nil {
-		t.Fatalf("failed to add networking scheme: %v", err)
 	}
 	return s
 }

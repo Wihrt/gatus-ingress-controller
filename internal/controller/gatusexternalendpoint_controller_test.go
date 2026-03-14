@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -141,7 +142,7 @@ func TestGatusExternalEndpointReconciler_NoAlerts(t *testing.T) {
 	_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: "gatus-secrets", Namespace: "gatus"}, secret)
 	raw := string(secret.Data["external-endpoints.yaml"])
 
-	if contains(raw, "alerts:") {
+	if strings.Contains(raw, "alerts:") {
 		t.Errorf("expected no alerts block, got:\n%s", raw)
 	}
 }
@@ -255,7 +256,7 @@ func TestGatusExternalEndpointReconciler_AlertOverrides(t *testing.T) {
 		"minimum-reminder-interval: 15m": "minimum-reminder-interval",
 	}
 	for substr, label := range checks {
-		if !contains(raw, substr) {
+		if !strings.Contains(raw, substr) {
 			t.Errorf("expected %s (%q) in external-endpoints.yaml, got:\n%s", label, substr, raw)
 		}
 	}
@@ -313,10 +314,10 @@ func TestGatusExternalEndpointReconciler_ProviderOverride(t *testing.T) {
 	_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: "gatus-secrets", Namespace: "gatus"}, secret)
 	raw := string(secret.Data["external-endpoints.yaml"])
 
-	if !contains(raw, "provider-override") {
+	if !strings.Contains(raw, "provider-override") {
 		t.Errorf("expected 'provider-override' in external-endpoints.yaml, got:\n%s", raw)
 	}
-	if !contains(raw, "teams.example.com") {
+	if !strings.Contains(raw, "teams.example.com") {
 		t.Errorf("expected 'teams.example.com' in external-endpoints.yaml, got:\n%s", raw)
 	}
 }
@@ -382,10 +383,10 @@ func TestGatusExternalEndpointReconciler_UpdateTokenReflected(t *testing.T) {
 	_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: "gatus-secrets", Namespace: "gatus"}, secret)
 	raw := string(secret.Data["external-endpoints.yaml"])
 
-	if !contains(raw, "updated-token") {
+	if !strings.Contains(raw, "updated-token") {
 		t.Errorf("expected updated token in output, got:\n%s", raw)
 	}
-	if !contains(raw, "new-group") {
+	if !strings.Contains(raw, "new-group") {
 		t.Errorf("expected updated group in output, got:\n%s", raw)
 	}
 }
