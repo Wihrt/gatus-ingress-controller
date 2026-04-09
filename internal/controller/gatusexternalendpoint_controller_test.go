@@ -14,7 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	monitoringv1alpha1 "github.com/Wihrt/gatus-ingress-controller/api/v1alpha1"
+	monitoringv1alpha1 "github.com/Wihrt/gatus-controller/api/v1alpha1"
 )
 
 func newExtEndpointReconciler(fakeClient client.Client) *GatusExternalEndpointReconciler {

@@ -1,20 +1,20 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "gatus-ingress-controller.fullname" . }}
+  name: {{ include "gatus-controller.fullname" . }}
   labels:
-    {{- include "gatus-ingress-controller.labels" . | nindent 4 }}
+    {{- include "gatus-controller.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      {{- include "gatus-ingress-controller.selectorLabels" . | nindent 6 }}
+      {{- include "gatus-controller.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "gatus-ingress-controller.selectorLabels" . | nindent 8 }}
+        {{- include "gatus-controller.selectorLabels" . | nindent 8 }}
     spec:
-      serviceAccountName: {{ include "gatus-ingress-controller.serviceAccountName" . }}
+      serviceAccountName: {{ include "gatus-controller.serviceAccountName" . }}
       automountServiceAccountToken: true
       securityContext:
         runAsNonRoot: true
@@ -71,5 +71,5 @@ spec:
       volumes:
         - name: webhook-tls
           secret:
-            secretName: {{ include "gatus-ingress-controller.fullname" . }}-webhook-tls
+            secretName: {{ include "gatus-controller.fullname" . }}-webhook-tls
       {{- end }}

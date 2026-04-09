@@ -6,7 +6,7 @@ import (
 
 	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 
-	monitoringv1alpha1 "github.com/Wihrt/gatus-ingress-controller/api/v1alpha1"
+	monitoringv1alpha1 "github.com/Wihrt/gatus-controller/api/v1alpha1"
 )
 
 func TestBoolPtr(t *testing.T) {

@@ -7,7 +7,7 @@ spec:
   catch:
     - podLogs:
         namespace: gatus-system
-        selector: app.kubernetes.io/name=gatus-ingress-controller
+        selector: app.kubernetes.io/name=gatus-controller
         tail: 100
   steps:
     # ── Step 1: External endpoint aggregated into external-endpoints.yaml ─────

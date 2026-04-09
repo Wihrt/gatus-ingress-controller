@@ -42,7 +42,7 @@ repos:
 
       - id: helm-lint
         name: helm lint
-        entry: helm lint charts/gatus-ingress-controller
+        entry: helm lint charts/gatus-controller
         language: system
         pass_filenames: false
         files: ^charts/

@@ -2,7 +2,7 @@ version: "3"
 
 vars:
   IMAGE_REGISTRY: '{{.IMAGE_REGISTRY | default "ghcr.io"}}'
-  IMAGE_REPO: '{{.IMAGE_REPO | default "wihrt/gatus-ingress-controller"}}'
+  IMAGE_REPO: '{{.IMAGE_REPO | default "wihrt/gatus-controller"}}'
   IMAGE_TAG: '{{.IMAGE_TAG | default "latest"}}'
 
 tasks:

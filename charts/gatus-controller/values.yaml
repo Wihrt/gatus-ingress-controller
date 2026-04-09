@@ -9,7 +9,7 @@ crds:
 replicaCount: 1
 
 image:
-  repository: ghcr.io/wihrt/gatus-ingress-controller
+  repository: ghcr.io/wihrt/gatus-controller
   pullPolicy: IfNotPresent
   tag: "latest"
 

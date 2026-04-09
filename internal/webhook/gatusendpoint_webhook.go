@@ -10,7 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	monitoringv1alpha1 "github.com/Wihrt/gatus-ingress-controller/api/v1alpha1"
+	monitoringv1alpha1 "github.com/Wihrt/gatus-controller/api/v1alpha1"
 )
 
 // GatusEndpointValidator validates GatusEndpoint resources.

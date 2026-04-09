@@ -14,9 +14,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	monitoringv1alpha1 "github.com/Wihrt/gatus-ingress-controller/api/v1alpha1"
-	"github.com/Wihrt/gatus-ingress-controller/internal/controller"
-	"github.com/Wihrt/gatus-ingress-controller/internal/webhook"
+	monitoringv1alpha1 "github.com/Wihrt/gatus-controller/api/v1alpha1"
+	"github.com/Wihrt/gatus-controller/internal/controller"
+	"github.com/Wihrt/gatus-controller/internal/webhook"
 )
 
 var (

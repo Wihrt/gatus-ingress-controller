@@ -1,7 +1,7 @@
-# gatus-ingress-controller
+# gatus-controller
 
-[![Build](https://github.com/Wihrt/gatus-ingress-controller/actions/workflows/main.yml/badge.svg)](https://github.com/Wihrt/gatus-ingress-controller/actions/workflows/main.yml)
-[![Coverage](https://codecov.io/gh/Wihrt/gatus-ingress-controller/graph/badge.svg)](https://codecov.io/gh/Wihrt/gatus-ingress-controller)
+[![Build](https://github.com/Wihrt/gatus-controller/actions/workflows/main.yml/badge.svg)](https://github.com/Wihrt/gatus-controller/actions/workflows/main.yml)
+[![Coverage](https://codecov.io/gh/Wihrt/gatus-controller/graph/badge.svg)](https://codecov.io/gh/Wihrt/gatus-controller)
 
 A Kubernetes controller that manages [Gatus](https://github.com/TwiN/gatus) monitoring endpoints via custom resources, automatically aggregating them into a shared Secret that Gatus reads for its configuration.
 
@@ -55,7 +55,7 @@ helm install gatus oci://ghcr.io/twin/helm-charts/gatus \
 ### 3. Deploy the controller
 
 ```bash
-helm install gatus-ingress-controller oci://ghcr.io/wihrt/charts/gatus-ingress-controller \
+helm install gatus-controller oci://ghcr.io/wihrt/charts/gatus-controller \
   --namespace gatus-system \
   --create-namespace
 ```
@@ -67,7 +67,7 @@ helm install gatus-ingress-controller oci://ghcr.io/wihrt/charts/gatus-ingress-c
 | `targetNamespace` | `gatus` | Namespace where the Secret is written |
 | `secretName` | `gatus-secrets` | Name of the Secret to write endpoint data to (must pre-exist) |
 | `webhook.enabled` | `true` | Enable validating webhooks for CRDs (requires cert-manager) |
-| `image.repository` | `ghcr.io/wihrt/gatus-ingress-controller` | Controller image |
+| `image.repository` | `ghcr.io/wihrt/gatus-controller` | Controller image |
 | `image.tag` | `latest` | Image tag |
 | `replicaCount` | `1` | Number of replicas |
 

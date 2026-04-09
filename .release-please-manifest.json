@@ -1,4 +1,4 @@
 {
   ".": "0.1.0",
-  "charts/gatus-ingress-controller": "0.1.0"
+  "charts/gatus-controller": "0.1.0"
 }

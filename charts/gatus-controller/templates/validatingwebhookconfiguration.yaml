@@ -2,17 +2,17 @@
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingWebhookConfiguration
 metadata:
-  name: {{ include "gatus-ingress-controller.fullname" . }}
+  name: {{ include "gatus-controller.fullname" . }}
   labels:
-    {{- include "gatus-ingress-controller.labels" . | nindent 4 }}
+    {{- include "gatus-controller.labels" . | nindent 4 }}
   annotations:
-    cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/{{ include "gatus-ingress-controller.fullname" . }}-webhook-tls
+    cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/{{ include "gatus-controller.fullname" . }}-webhook-tls
 webhooks:
   - name: vgatusendpoint.kb.io
     admissionReviewVersions: ["v1"]
     clientConfig:
       service:
-        name: {{ include "gatus-ingress-controller.fullname" . }}-webhook
+        name: {{ include "gatus-controller.fullname" . }}-webhook
         namespace: {{ .Release.Namespace }}
         path: /validate-monitoring-gatus-io-v1alpha1-gatusendpoint
     rules:

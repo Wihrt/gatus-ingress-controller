@@ -1,5 +1,5 @@
 IMAGE_REGISTRY ?= ghcr.io
-IMAGE_REPO ?= wihrt/gatus-ingress-controller
+IMAGE_REPO ?= wihrt/gatus-controller
 IMAGE_TAG ?= latest
 
 .PHONY: build

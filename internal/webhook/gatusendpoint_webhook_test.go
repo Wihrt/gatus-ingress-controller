@@ -6,7 +6,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	monitoringv1alpha1 "github.com/Wihrt/gatus-ingress-controller/api/v1alpha1"
+	monitoringv1alpha1 "github.com/Wihrt/gatus-controller/api/v1alpha1"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 )
 

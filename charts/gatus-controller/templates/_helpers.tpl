@@ -1,8 +1,8 @@
-{{- define "gatus-ingress-controller.name" -}}
+{{- define "gatus-controller.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
-{{- define "gatus-ingress-controller.fullname" -}}
+{{- define "gatus-controller.fullname" -}}
 {{- if .Values.fullnameOverride }}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
 {{- else }}
@@ -15,27 +15,27 @@
 {{- end }}
 {{- end }}
 
-{{- define "gatus-ingress-controller.chart" -}}
+{{- define "gatus-controller.chart" -}}
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
-{{- define "gatus-ingress-controller.labels" -}}
-helm.sh/chart: {{ include "gatus-ingress-controller.chart" . }}
-{{ include "gatus-ingress-controller.selectorLabels" . }}
+{{- define "gatus-controller.labels" -}}
+helm.sh/chart: {{ include "gatus-controller.chart" . }}
+{{ include "gatus-controller.selectorLabels" . }}
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
 
-{{- define "gatus-ingress-controller.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "gatus-ingress-controller.name" . }}
+{{- define "gatus-controller.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "gatus-controller.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
-{{- define "gatus-ingress-controller.serviceAccountName" -}}
+{{- define "gatus-controller.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create }}
-{{- default (include "gatus-ingress-controller.fullname" .) .Values.serviceAccount.name }}
+{{- default (include "gatus-controller.fullname" .) .Values.serviceAccount.name }}
 {{- else }}
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}

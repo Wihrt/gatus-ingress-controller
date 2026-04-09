@@ -1,0 +1,17 @@
+{{- if .Values.webhook.enabled }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "gatus-controller.fullname" . }}-webhook-tls
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gatus-controller.labels" . | nindent 4 }}
+spec:
+  secretName: {{ include "gatus-controller.fullname" . }}-webhook-tls
+  issuerRef:
+    name: {{ include "gatus-controller.fullname" . }}-selfsigned
+    kind: Issuer
+  dnsNames:
+    - {{ include "gatus-controller.fullname" . }}-webhook.{{ .Release.Namespace }}.svc
+    - {{ include "gatus-controller.fullname" . }}-webhook.{{ .Release.Namespace }}.svc.cluster.local
+{{- end }}

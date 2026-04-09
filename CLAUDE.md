@@ -64,7 +64,7 @@ Multi-stage build: `golang:1.24-alpine` → `gcr.io/distroless/static:nonroot`. 
 
 ## Helm Chart
 
-Located in `charts/gatus-ingress-controller/`. CRDs in `charts/gatus-ingress-controller/crds/`. Version bumped automatically by the tag workflow.
+Located in `charts/gatus-controller/`. CRDs in `charts/gatus-controller/crds/`. Version bumped automatically by the tag workflow.
 
 ## Release Process
 

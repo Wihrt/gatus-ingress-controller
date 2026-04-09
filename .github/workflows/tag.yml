@@ -14,7 +14,7 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  CHART_NAME: gatus-ingress-controller
+  CHART_NAME: gatus-controller
 
 jobs:
   # ── Create and push the git tag ───────────────────────────────────────────────
@@ -141,7 +141,7 @@ jobs:
             echo "## Helm chart"
             echo ""
             echo '```'
-            echo "helm install gatus-ingress-controller \\"
+            echo "helm install gatus-controller \\"
             echo "  oci://${{ env.REGISTRY }}/${{ env.OWNER }}/charts/${{ env.CHART_NAME }} \\"
             echo "  --version ${{ steps.version.outputs.version }}"
             echo '```'

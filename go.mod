@@ -1,4 +1,4 @@
-module github.com/Wihrt/gatus-ingress-controller
+module github.com/Wihrt/gatus-controller
 
 go 1.24.13
 

@@ -2,10 +2,10 @@
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
-  name: {{ include "gatus-ingress-controller.fullname" . }}-selfsigned
+  name: {{ include "gatus-controller.fullname" . }}-selfsigned
   namespace: {{ .Release.Namespace }}
   labels:
-    {{- include "gatus-ingress-controller.labels" . | nindent 4 }}
+    {{- include "gatus-controller.labels" . | nindent 4 }}
 spec:
   selfSigned: {}
 {{- end }}

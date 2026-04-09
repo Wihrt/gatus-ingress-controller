@@ -1,10 +1,10 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: {{ include "gatus-ingress-controller.fullname" . }}
+  name: {{ include "gatus-controller.fullname" . }}
   namespace: {{ .Values.targetNamespace }}
   labels:
-    {{- include "gatus-ingress-controller.labels" . | nindent 4 }}
+    {{- include "gatus-controller.labels" . | nindent 4 }}
 rules:
   - apiGroups: [""]
     resources: ["secrets"]

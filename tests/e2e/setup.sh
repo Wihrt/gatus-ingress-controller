@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
 # Cluster bootstrap for E2E tests.
-# Installs cert-manager and the gatus-ingress-controller via Helm,
+# Installs cert-manager and the gatus-controller via Helm,
 # then waits for CRDs and the controller deployment to be ready.
 # Usage: bash tests/e2e/setup.sh <image-tag>
 set -euo pipefail
 
 IMAGE_TAG="${1:-ci-test}"
-IMAGE_REPOSITORY="${IMAGE_REGISTRY:-ghcr.io/wihrt/gatus-ingress-controller}"
+IMAGE_REPOSITORY="${IMAGE_REGISTRY:-ghcr.io/wihrt/gatus-controller}"
 NAMESPACE="gatus-system"
 TARGET_NAMESPACE="gatus"
 TIMEOUT="90s"
-RELEASE_NAME="gatus-ingress-controller"
+RELEASE_NAME="gatus-controller"
 # renovate: datasource=helm depName=cert-manager registryUrl=https://charts.jetstack.io
 CERT_MANAGER_VERSION="v1.19.4"
 
-echo "==> E2E setup: gatus-ingress-controller"
+echo "==> E2E setup: gatus-controller"
 echo "    Image:            ${IMAGE_REPOSITORY}:${IMAGE_TAG}"
 echo "    Namespace:        ${NAMESPACE}"
 echo "    Target namespace: ${TARGET_NAMESPACE}"
@@ -40,10 +40,10 @@ helm upgrade --install cert-manager jetstack/cert-manager \
 # ── 3. Deploy controller via Helm ─────────────────────────────────────────────
 # Apply CRDs explicitly — helm upgrade does not update resources in crds/ directory
 echo "==> Applying CRDs..."
-kubectl apply -f charts/gatus-ingress-controller/crds/
+kubectl apply -f charts/gatus-controller/crds/
 
 echo "==> Installing controller via Helm (image: ${IMAGE_REPOSITORY}:${IMAGE_TAG})..."
-helm upgrade --install "${RELEASE_NAME}" ./charts/gatus-ingress-controller \
+helm upgrade --install "${RELEASE_NAME}" ./charts/gatus-controller \
   --namespace "${NAMESPACE}" \
   --create-namespace \
   --set image.repository="${IMAGE_REPOSITORY}" \
