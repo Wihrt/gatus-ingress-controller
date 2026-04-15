@@ -94,7 +94,7 @@ jobs:
           helm push ${{ env.CHART_NAME }}-${{ steps.version.outputs.version }}.tgz oci://${{ env.REGISTRY }}/${{ env.OWNER }}/charts
 
       - name: Upload Helm chart artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: helm-chart
           path: ${{ env.CHART_NAME }}-${{ steps.version.outputs.version }}.tgz
@@ -116,7 +116,7 @@ jobs:
         run: echo "version=$(echo '${{ inputs.tag }}' | sed 's/^v//')" >> $GITHUB_OUTPUT
 
       - name: Download Helm chart artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: helm-chart
 
