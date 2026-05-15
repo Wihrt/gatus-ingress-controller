@@ -98,7 +98,7 @@ jobs:
           docker save gatus-controller:ci-test | sudo k3s ctr images import -
 
       - name: Install Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@v5
 
       - name: Install chainsaw
         run: |
